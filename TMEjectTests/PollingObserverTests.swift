@@ -37,7 +37,6 @@ final class BackupPhaseTests: XCTestCase {
 
 final class PollingObserverTests: XCTestCase {
 
-    // Collect events emitted by the observer for assertions.
     actor EventBox {
         var events: [AppEvent] = []
         func append(_ e: AppEvent) { events.append(e) }
@@ -82,23 +81,26 @@ final class PollingObserverTests: XCTestCase {
         await tmutil.enqueueLatestBackup(.success(snap))
         let box = EventBox()
         let observer = makeObserver(tmutil: tmutil, clock: FakeClock(), box: box)
-        await observer.runOnce()  // running, copying → backupBegan
-        await observer.runOnce()  // → confirmingEntered
+        await observer.runOnce()
+        await observer.runOnce()
         let events = await box.snapshot()
-        XCTAssertEqual(events, [.backupBegan, .confirmingEntered(latestBackupPath: snap)])
+        XCTAssertEqual(events, [
+            .backupBegan,
+            .confirmingEntered(latestBackupPath: snap, entryProbeFailed: false)
+        ])
     }
 
-    func testTMEjectLaunchedMidConfirmingEmitsConfirmingEnteredOnFirstPoll() async throws {
-        let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-11-100000")
+    // H2: tmutil latestbackup throws at confirming-entry → observer must mark probe failed,
+    // not silently swallow it as nil.
+    func testEnteringConfirmingPropagatesLatestbackupFailure() async throws {
         let tmutil = FakeTMUtilClient()
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing")))
-        await tmutil.enqueueLatestBackup(.success(snap))
+        await tmutil.enqueueLatestBackup(.failure(TMUtilError.latestBackupUnavailable(stderr: "no mount")))
         let box = EventBox()
         let observer = makeObserver(tmutil: tmutil, clock: FakeClock(), box: box)
         await observer.runOnce()
         let events = await box.snapshot()
-        // No baseline silence: a confirming-phase backup at launch is reacted to, not missed.
-        XCTAssertEqual(events, [.confirmingEntered(latestBackupPath: snap)])
+        XCTAssertEqual(events, [.confirmingEntered(latestBackupPath: nil, entryProbeFailed: true)])
     }
 
     func testExitConfirmingEmitsConfirmingExitedWithNewSnapshot() async throws {
@@ -106,17 +108,35 @@ final class PollingObserverTests: XCTestCase {
         let newSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-11-110000")
         let tmutil = FakeTMUtilClient()
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing")))
-        await tmutil.enqueueLatestBackup(.success(oldSnap))     // entry capture
+        await tmutil.enqueueLatestBackup(.success(oldSnap))
         await tmutil.enqueueStatus(.success(StatusPlist(running: false, backupPhase: nil)))
-        await tmutil.enqueueLatestBackup(.success(newSnap))     // exit capture
+        await tmutil.enqueueLatestBackup(.success(newSnap))
         let box = EventBox()
         let observer = makeObserver(tmutil: tmutil, clock: FakeClock(), box: box)
-        await observer.runOnce()  // → confirmingEntered(oldSnap)
-        await observer.runOnce()  // → confirmingExited(newSnap)
+        await observer.runOnce()
+        await observer.runOnce()
         let events = await box.snapshot()
         XCTAssertEqual(events, [
-            .confirmingEntered(latestBackupPath: oldSnap),
-            .confirmingExited(newLatestBackupPath: newSnap)
+            .confirmingEntered(latestBackupPath: oldSnap, entryProbeFailed: false),
+            .confirmingExited(newLatestBackupPath: newSnap, exitProbeFailed: false)
+        ])
+    }
+
+    func testExitConfirmingPropagatesExitProbeFailure() async throws {
+        let oldSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-11-100000")
+        let tmutil = FakeTMUtilClient()
+        await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing")))
+        await tmutil.enqueueLatestBackup(.success(oldSnap))
+        await tmutil.enqueueStatus(.success(StatusPlist(running: false, backupPhase: nil)))
+        await tmutil.enqueueLatestBackup(.failure(TMUtilError.latestBackupUnavailable(stderr: "vanished")))
+        let box = EventBox()
+        let observer = makeObserver(tmutil: tmutil, clock: FakeClock(), box: box)
+        await observer.runOnce()
+        await observer.runOnce()
+        let events = await box.snapshot()
+        XCTAssertEqual(events, [
+            .confirmingEntered(latestBackupPath: oldSnap, entryProbeFailed: false),
+            .confirmingExited(newLatestBackupPath: nil, exitProbeFailed: true)
         ])
     }
 
@@ -126,44 +146,76 @@ final class PollingObserverTests: XCTestCase {
         await tmutil.enqueueStatus(.success(StatusPlist(running: false, backupPhase: nil)))
         let box = EventBox()
         let observer = makeObserver(tmutil: tmutil, clock: FakeClock(), box: box)
-        await observer.runOnce()  // backupBegan
-        await observer.runOnce()  // running=false, never reached confirming → backupStopped
+        await observer.runOnce()
+        await observer.runOnce()
         let events = await box.snapshot()
         XCTAssertEqual(events, [.backupBegan, .backupStopped])
     }
 
-    func testStallDetectionAfter10MinUnchanged() async throws {
+    // M5: stall detector is inactive until setStallTracking(active: true) is called.
+    func testStallDetectionInactiveByDefault() async throws {
         let tmutil = FakeTMUtilClient()
-        // Two polls with totalBytes pinned at 1000; clock advances 11 min between them → stall.
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Copying", rawTotalBytes: 1000)))
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Copying", rawTotalBytes: 1000)))
         let clock = FakeClock()
         let box = EventBox()
         let observer = makeObserver(tmutil: tmutil, clock: clock, box: box)
-        await observer.runOnce()                    // backupBegan, totalBytesUnchangedSince=0
+        await observer.runOnce()           // backupBegan
         await clock.tick(11 * 60)
-        await observer.runOnce()                    // 11min elapsed, bytes unchanged → stallDetected
+        await observer.runOnce()           // no stall — tracking never activated
+        let events = await box.snapshot()
+        XCTAssertEqual(events, [.backupBegan])
+    }
+
+    func testStallDetectionFiresAfter10MinWhenActive() async throws {
+        let tmutil = FakeTMUtilClient()
+        await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Copying", rawTotalBytes: 1000)))
+        await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Copying", rawTotalBytes: 1000)))
+        let clock = FakeClock()
+        let box = EventBox()
+        let observer = makeObserver(tmutil: tmutil, clock: clock, box: box)
+        await observer.setStallTracking(active: true)
+        await observer.runOnce()           // backupBegan, baseline byte count + timestamp
+        await clock.tick(11 * 60)
+        await observer.runOnce()           // bytes unchanged 11min → stall
         let events = await box.snapshot()
         XCTAssertEqual(events, [.backupBegan, .stallDetected])
     }
 
-    func testConfirmingHardCapAfter4h() async throws {
+    // M5: confirming hard cap inactive until setConfirmingTracking(active: true) is called.
+    func testConfirmingCapInactiveByDefault() async throws {
         let tmutil = FakeTMUtilClient()
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing")))
-        await tmutil.enqueueLatestBackup(.success(nil))         // confirmingEntered snapshot
+        await tmutil.enqueueLatestBackup(.success(nil))
+        await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing")))
+        let clock = FakeClock()
+        let box = EventBox()
+        let observer = makeObserver(tmutil: tmutil, clock: clock, box: box)
+        await observer.runOnce()              // confirmingEntered emitted, but cap not active
+        await clock.tick(5 * 60 * 60)
+        await observer.runOnce()
+        let events = await box.snapshot()
+        XCTAssertEqual(events, [.confirmingEntered(latestBackupPath: nil, entryProbeFailed: false)])
+    }
+
+    func testConfirmingCapFiresAfter4hWhenActive() async throws {
+        let tmutil = FakeTMUtilClient()
+        await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing")))
+        await tmutil.enqueueLatestBackup(.success(nil))
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing")))
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing")))
         let clock = FakeClock()
         let box = EventBox()
         let observer = makeObserver(tmutil: tmutil, clock: clock, box: box)
-        await observer.runOnce()  // confirmingEntered, hard-cap starts at t=0
+        await observer.setConfirmingTracking(active: true)   // started at t=0
+        await observer.runOnce()
         await clock.tick(2 * 60 * 60)
-        await observer.runOnce()  // 2h — no event
+        await observer.runOnce()
         await clock.tick(2 * 60 * 60 + 60)
-        await observer.runOnce()  // > 4h → timeout
+        await observer.runOnce()
         let events = await box.snapshot()
         XCTAssertEqual(events, [
-            .confirmingEntered(latestBackupPath: nil),
+            .confirmingEntered(latestBackupPath: nil, entryProbeFailed: false),
             .confirmingTimedOut
         ])
     }
@@ -174,8 +226,8 @@ final class PollingObserverTests: XCTestCase {
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "FutureMacOSPhase")))
         let box = EventBox()
         let observer = makeObserver(tmutil: tmutil, clock: FakeClock(), box: box)
-        await observer.runOnce()  // backupBegan
-        await observer.runOnce()  // phase changes to unknown — must not emit confirmingEntered
+        await observer.runOnce()
+        await observer.runOnce()
         let events = await box.snapshot()
         XCTAssertEqual(events, [.backupBegan])
     }

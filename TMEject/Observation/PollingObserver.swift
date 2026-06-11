@@ -16,15 +16,20 @@ actor PollingObserver {
     private let emit: @Sendable (AppEvent) async -> Void
     private var task: Task<Void, Never>?
 
-    // Initial state implies "TM is idle, never seen running." On the first real poll a
-    // mid-running backup correctly emits backupBegan (or confirmingEntered if it's already
-    // past Copying) so TMEject reacts to backups that started before it launched.
+    // Initial state implies "TM is idle, never seen running." A mid-running backup at launch
+    // therefore correctly emits backupBegan (or confirmingEntered) on the first poll.
     private var lastRunning: Bool = false
     private var lastPhaseKind: BackupPhaseKind = .preCopy
-    private var lastTotalBytes: Int64?
-    private var totalBytesUnchangedSince: TimeInterval?
+
+    // Stall + confirming-cap tracking — activated by the coordinator in response to the state
+    // machine's startStallTimer/stopStallTimer/startConfirmingTimer/stopConfirmingTimer commands
+    // (M5). When inactive the observer skips the corresponding evaluation entirely.
+    private var stallActive: Bool = false
+    private var stallLastTotalBytes: Int64?
+    private var stallUnchangedSince: TimeInterval?
+
+    private var confirmingActive: Bool = false
     private var confirmingStartedAt: TimeInterval?
-    private var supplyingActiveCadence: Bool = false
 
     init(tmutil: TMUtilClient, clock: MonotonicClock = SystemClock(),
          emit: @escaping @Sendable (AppEvent) async -> Void) {
@@ -46,15 +51,27 @@ actor PollingObserver {
     }
 
     func pokeNow() async {
-        // External wake nudges call this so the next poll runs immediately instead of waiting
-        // out the idle 30s.
         await runOnce()
+    }
+
+    // MARK: - Timer commands (M5: observer consumes state machine commands)
+
+    func setStallTracking(active: Bool) {
+        stallActive = active
+        stallLastTotalBytes = nil
+        stallUnchangedSince = nil
+    }
+
+    func setConfirmingTracking(active: Bool) {
+        confirmingActive = active
+        confirmingStartedAt = active ? clock.now() : nil
     }
 
     private func loop() async {
         while !Task.isCancelled {
             await runOnce()
-            let interval = supplyingActiveCadence ? Tunables.activePollInterval : Tunables.idlePollInterval
+            let active = lastRunning || lastPhaseKind.isConfirming
+            let interval = active ? Tunables.activePollInterval : Tunables.idlePollInterval
             do {
                 try await clock.sleep(seconds: interval)
             } catch {
@@ -63,7 +80,6 @@ actor PollingObserver {
         }
     }
 
-    /// One poll tick. Visible to tests via `pokeNow()`.
     func runOnce() async {
         let status: StatusPlist
         do {
@@ -75,61 +91,48 @@ actor PollingObserver {
 
         let phase = BackupPhaseKind.classify(status.backupPhase)
         let now = clock.now()
-
-        // Cadence flips with running OR confirming.
-        supplyingActiveCadence = status.running || phase.isConfirming
-
         let prevRunning = lastRunning
+        let prevPhaseKind = lastPhaseKind
 
         // Transition: idle → running, non-confirming.
         if !prevRunning && status.running && !phase.isConfirming {
-            lastTotalBytes = status.rawTotalBytes
-            totalBytesUnchangedSince = now
             await emit(.backupBegan)
         }
 
         // Transition: enter confirming.
-        if !lastPhaseKind.isConfirming && phase.isConfirming {
-            confirmingStartedAt = now
-            let snap = await captureLatestBackup()
-            await emit(.confirmingEntered(latestBackupPath: snap))
+        if !prevPhaseKind.isConfirming && phase.isConfirming {
+            let (path, failed) = await captureLatestBackup()
+            await emit(.confirmingEntered(latestBackupPath: path, entryProbeFailed: failed))
         }
 
-        // Transition: exit confirming.
-        // We treat "no longer in a confirming phase" as the exit signal — that covers
-        // (a) phase moves away from confirming while Running is still true (rare), and
-        // (b) Running flips false directly out of confirming. Both call for the same
-        // snapshot-advance check.
-        if lastPhaseKind.isConfirming && !phase.isConfirming {
-            confirmingStartedAt = nil
-            let snap = await captureLatestBackup()
-            await emit(.confirmingExited(newLatestBackupPath: snap))
+        // Transition: exit confirming. Covers (a) phase moves away while Running stays true,
+        // (b) Running flips false directly out of confirming.
+        if prevPhaseKind.isConfirming && !phase.isConfirming {
+            let (path, failed) = await captureLatestBackup()
+            await emit(.confirmingExited(newLatestBackupPath: path, exitProbeFailed: failed))
         }
 
         // Transition: running → stopped, NOT in confirming.
-        // confirming case is handled by the exit branch above (which fires before this).
-        if prevRunning && !status.running && !lastPhaseKind.isConfirming && !phase.isConfirming {
+        if prevRunning && !status.running && !prevPhaseKind.isConfirming && !phase.isConfirming {
             await emit(.backupStopped)
-            totalBytesUnchangedSince = nil
         }
 
-        // Stall detection (during backingUp): totalBytes unchanged for stallTimeout.
-        if status.running && !phase.isConfirming {
-            if status.rawTotalBytes != lastTotalBytes {
-                lastTotalBytes = status.rawTotalBytes
-                totalBytesUnchangedSince = now
-            } else if let since = totalBytesUnchangedSince,
+        // Stall detection (only when active).
+        if stallActive {
+            if status.rawTotalBytes != stallLastTotalBytes {
+                stallLastTotalBytes = status.rawTotalBytes
+                stallUnchangedSince = now
+            } else if let since = stallUnchangedSince,
                       now - since >= Tunables.stallTimeout {
                 TMEjectLog.observer.error("Stall detected: _raw_totalBytes unchanged for \(Int(now - since))s")
                 await emit(.stallDetected)
-                totalBytesUnchangedSince = nil
+                stallUnchangedSince = nil
             }
-        } else {
-            totalBytesUnchangedSince = nil
         }
 
-        // Confirming hard cap.
-        if phase.isConfirming, let started = confirmingStartedAt, now - started >= Tunables.confirmingHardCap {
+        // Confirming hard cap (only when active).
+        if confirmingActive, let started = confirmingStartedAt,
+           now - started >= Tunables.confirmingHardCap {
             TMEjectLog.observer.error("Confirming phase exceeded \(Int(Tunables.confirmingHardCap))s — emitting timeout")
             confirmingStartedAt = nil
             await emit(.confirmingTimedOut)
@@ -139,12 +142,13 @@ actor PollingObserver {
         lastPhaseKind = phase
     }
 
-    private func captureLatestBackup() async -> URL? {
+    private func captureLatestBackup() async -> (path: URL?, failed: Bool) {
         do {
-            return try await tmutil.latestBackup()
+            let path = try await tmutil.latestBackup()
+            return (path, false)
         } catch {
-            TMEjectLog.observer.error("latestbackup failed: \(error)")
-            return nil
+            TMEjectLog.observer.error("latestbackup failed: \(error) — propagating probe-failed flag")
+            return (nil, true)
         }
     }
 }

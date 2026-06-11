@@ -10,15 +10,20 @@ enum AppState: String, Equatable, Sendable, CustomStringConvertible {
     var description: String { rawValue }
 }
 
+enum EjectSource: String, Sendable, Equatable {
+    case manual
+    case auto
+}
+
 enum AppEvent: Sendable, Equatable {
-    case wakeSignal                              // DNC ping, FSEvent fire, or scheduled poll tick — caller will poll
-    case backupBegan                             // observer: Running=true, phase outside the confirming set
-    case confirmingEntered(latestBackupPath: URL?)
-    case confirmingExited(newLatestBackupPath: URL?)
-    case backupStopped                           // observer: Running=false outside confirming
-    case stallDetected                           // 10min totalBytes unchanged in backingUp
-    case confirmingTimedOut                      // 4h hard cap in confirming
-    case manualEjectRequested(lock: Bool)
+    case wakeSignal
+    case backupBegan
+    case confirmingEntered(latestBackupPath: URL?, entryProbeFailed: Bool)
+    case confirmingExited(newLatestBackupPath: URL?, exitProbeFailed: Bool)
+    case backupStopped
+    case stallDetected
+    case confirmingTimedOut
+    case ejectRequested(lock: Bool, source: EjectSource)
     case ejectAttemptCompleted(success: Bool, errorSummary: String?)
     case appWillTerminate
 }
@@ -28,7 +33,10 @@ enum AppCommand: Sendable, Equatable {
     case recordPreConfirmLatestBackup(URL?)
     case clearPreConfirmLatestBackup
     case beginEject(lock: Bool)
-    case attemptAutoEjectIfAllowed              // coordinator consults autoEjectEnabled + cooldown before calling beginEject
+    /// Emitted on a successful confirmingExited. The coordinator (not the state machine)
+    /// decides whether the user has auto-eject enabled and whether the cooldown allows it
+    /// — if so the coordinator drives `.ejectRequested(source: .auto)`.
+    case signalBackupCompleted
     case showToast(level: ToastLevel, message: String)
     case notify(title: String, body: String)
     case setLastError(String?)
@@ -36,7 +44,7 @@ enum AppCommand: Sendable, Equatable {
     case stopStallTimer
     case startConfirmingTimer
     case stopConfirmingTimer
-    case showQuitDuringEjectWarning             // appWillTerminate while ejecting
+    case showQuitDuringEjectWarning
 
     enum ToastLevel: String, Sendable, Equatable {
         case info, success, warning, error

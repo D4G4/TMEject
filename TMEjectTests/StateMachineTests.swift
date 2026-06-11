@@ -5,8 +5,12 @@ final class StateMachineTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func sm(_ state: AppState, preConfirm: URL? = nil) -> StateMachine {
-        StateMachine(state: state, preConfirmLatestBackup: preConfirm)
+    private func sm(
+        _ state: AppState,
+        preConfirm: URL? = nil,
+        preConfirmFailed: Bool = false
+    ) -> StateMachine {
+        StateMachine(state: state, preConfirmLatestBackup: preConfirm, preConfirmProbeFailed: preConfirmFailed)
     }
 
     private func accept(_ outcome: GuardOutcome) -> [AppCommand]? {
@@ -17,7 +21,7 @@ final class StateMachineTests: XCTestCase {
         if case .ignored = outcome { return true } else { return false }
     }
 
-    // MARK: - Guard table (one cell per row at minimum)
+    // MARK: - Guard table
 
     func testWakeSignalAcceptedInIdleAndFailed_IgnoredElsewhere() {
         for s in [AppState.idle, .idleEjectFailed] {
@@ -43,6 +47,14 @@ final class StateMachineTests: XCTestCase {
         ])
     }
 
+    func testBackupBeganMovesIdleEjectFailedToBackingUp_CoverageGap() {
+        var m = sm(.idleEjectFailed)
+        let cmds = accept(m.handle(.backupBegan))
+        XCTAssertEqual(m.state, .backingUp)
+        XCTAssertEqual(cmds?.first, .setLastError(nil),
+                       "starting a new backup clears the stale eject error")
+    }
+
     func testBackupBeganIgnoredInBackingUpConfirmingEjecting() {
         for s in [AppState.backingUp, .confirming, .ejecting] {
             var m = sm(s)
@@ -55,9 +67,10 @@ final class StateMachineTests: XCTestCase {
         let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
         for from in [AppState.idle, .idleEjectFailed, .backingUp] {
             var m = sm(from)
-            let cmds = accept(m.handle(.confirmingEntered(latestBackupPath: snap)))
+            let cmds = accept(m.handle(.confirmingEntered(latestBackupPath: snap, entryProbeFailed: false)))
             XCTAssertEqual(m.state, .confirming, "from \(from)")
             XCTAssertEqual(m.preConfirmLatestBackup, snap, "from \(from)")
+            XCTAssertFalse(m.preConfirmProbeFailed, "from \(from)")
             XCTAssertEqual(cmds, [
                 .recordPreConfirmLatestBackup(snap),
                 .stopStallTimer,
@@ -66,40 +79,78 @@ final class StateMachineTests: XCTestCase {
         }
     }
 
+    func testConfirmingEnteredRecordsProbeFailedFlag() {
+        var m = sm(.backingUp)
+        _ = m.handle(.confirmingEntered(latestBackupPath: nil, entryProbeFailed: true))
+        XCTAssertEqual(m.state, .confirming)
+        XCTAssertNil(m.preConfirmLatestBackup)
+        XCTAssertTrue(m.preConfirmProbeFailed)
+    }
+
     func testConfirmingExitedAdvancedPathCountsAsSuccess() {
         let oldSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
         let newSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-110000")
         var m = sm(.confirming, preConfirm: oldSnap)
-        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: newSnap))) ?? []
+        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: newSnap, exitProbeFailed: false))) ?? []
         XCTAssertEqual(m.state, .idle)
         XCTAssertNil(m.preConfirmLatestBackup)
+        XCTAssertFalse(m.preConfirmProbeFailed)
         XCTAssertTrue(cmds.contains(.stopConfirmingTimer))
         XCTAssertTrue(cmds.contains(.clearPreConfirmLatestBackup))
-        XCTAssertTrue(cmds.contains(.attemptAutoEjectIfAllowed))
+        XCTAssertTrue(cmds.contains(.signalBackupCompleted))
         XCTAssertTrue(cmds.contains(where: { if case .notify(let t, _) = $0 { return t == "Backup complete" }; return false }))
     }
 
     func testConfirmingExitedSamePathCountsAsCancellation() {
         let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
         var m = sm(.confirming, preConfirm: snap)
-        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: snap))) ?? []
+        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: snap, exitProbeFailed: false))) ?? []
         XCTAssertEqual(m.state, .idle)
-        XCTAssertFalse(cmds.contains(.attemptAutoEjectIfAllowed))
+        XCTAssertFalse(cmds.contains(.signalBackupCompleted))
         XCTAssertTrue(cmds.contains(where: { if case .showToast(_, let msg) = $0 { return msg.contains("without a new snapshot") }; return false }))
     }
 
     func testConfirmingExitedFirstEverBackupCountsAsSuccess() {
         let newSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
         var m = sm(.confirming, preConfirm: nil)
-        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: newSnap))) ?? []
+        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: newSnap, exitProbeFailed: false))) ?? []
         XCTAssertEqual(m.state, .idle)
-        XCTAssertTrue(cmds.contains(.attemptAutoEjectIfAllowed))
+        XCTAssertTrue(cmds.contains(.signalBackupCompleted))
+    }
+
+    // H2 coverage gap: entry-probe failed → MUST NOT signal completion even if exit path
+    // is non-nil. This prevents the false-success auto-eject race.
+    func testConfirmingExitedRefusesSuccessWhenEntryProbeFailed() {
+        let exitSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
+        var m = sm(.confirming, preConfirm: nil, preConfirmFailed: true)
+        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: exitSnap, exitProbeFailed: false))) ?? []
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertFalse(cmds.contains(.signalBackupCompleted),
+                       "must not claim success when entry probe failed — no reliable baseline")
+        XCTAssertTrue(cmds.contains(where: { if case .showToast(_, let msg) = $0 { return msg.contains("probe failed") }; return false }))
+    }
+
+    func testConfirmingExitedRefusesSuccessWhenExitProbeFailed() {
+        let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
+        var m = sm(.confirming, preConfirm: snap)
+        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: nil, exitProbeFailed: true))) ?? []
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertFalse(cmds.contains(.signalBackupCompleted))
+    }
+
+    // H2 coverage gap: prior == nil AND new == nil is unambiguous cancellation.
+    func testConfirmingExitedPriorNilNewNilIsCancellation() {
+        var m = sm(.confirming, preConfirm: nil)
+        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: nil, exitProbeFailed: false))) ?? []
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertFalse(cmds.contains(.signalBackupCompleted))
     }
 
     func testConfirmingExitedIgnoredOutsideConfirming() {
         for s in [AppState.idle, .idleEjectFailed, .backingUp, .ejecting] {
             var m = sm(s)
-            XCTAssertTrue(ignored(m.handle(.confirmingExited(newLatestBackupPath: nil))), "from \(s)")
+            XCTAssertTrue(ignored(m.handle(.confirmingExited(newLatestBackupPath: nil, exitProbeFailed: false))),
+                          "from \(s)")
             XCTAssertEqual(m.state, s)
         }
     }
@@ -139,28 +190,36 @@ final class StateMachineTests: XCTestCase {
         let cmds = accept(m.handle(.confirmingTimedOut)) ?? []
         XCTAssertEqual(m.state, .idle)
         XCTAssertNil(m.preConfirmLatestBackup)
+        XCTAssertFalse(m.preConfirmProbeFailed)
         XCTAssertTrue(cmds.contains(.stopConfirmingTimer))
         XCTAssertTrue(cmds.contains(where: { if case .setLastError(let s) = $0 { return s?.contains("4h") == true }; return false }))
     }
 
-    func testManualEjectAllowedOnlyInIdleAndFailed() {
+    func testEjectRequestedAllowedOnlyInIdleAndFailed() {
         for s in [AppState.idle, .idleEjectFailed] {
             var m = sm(s)
-            let cmds = accept(m.handle(.manualEjectRequested(lock: false))) ?? []
+            let cmds = accept(m.handle(.ejectRequested(lock: false, source: .manual))) ?? []
             XCTAssertEqual(m.state, .ejecting, "from \(s)")
             XCTAssertTrue(cmds.contains(.beginEject(lock: false)))
         }
         for s in [AppState.backingUp, .confirming, .ejecting] {
             var m = sm(s)
-            XCTAssertTrue(ignored(m.handle(.manualEjectRequested(lock: false))), "from \(s)")
+            XCTAssertTrue(ignored(m.handle(.ejectRequested(lock: false, source: .manual))), "from \(s)")
             XCTAssertEqual(m.state, s)
         }
     }
 
-    func testManualEjectLockFlagPropagates() {
+    func testEjectRequestedLockFlagPropagates() {
         var m = sm(.idle)
-        let cmds = accept(m.handle(.manualEjectRequested(lock: true))) ?? []
+        let cmds = accept(m.handle(.ejectRequested(lock: true, source: .manual))) ?? []
         XCTAssertTrue(cmds.contains(.beginEject(lock: true)))
+    }
+
+    func testEjectRequestedSourceAutoStillTransitionsAndEjects() {
+        var m = sm(.idle)
+        let cmds = accept(m.handle(.ejectRequested(lock: false, source: .auto))) ?? []
+        XCTAssertEqual(m.state, .ejecting)
+        XCTAssertTrue(cmds.contains(.beginEject(lock: false)))
     }
 
     func testEjectSuccessReturnsToIdle() {
@@ -194,6 +253,23 @@ final class StateMachineTests: XCTestCase {
         XCTAssertEqual(accept(ejecting.handle(.appWillTerminate)), [.showQuitDuringEjectWarning])
     }
 
+    // MARK: - M3 restore
+
+    func testRestoreConfirmingFromRelaunchSetsState() {
+        let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-11-100000")
+        var m = sm(.idle)
+        m.restoreConfirmingFromRelaunch(latestBackupPath: snap, entryProbeFailed: false)
+        XCTAssertEqual(m.state, .confirming)
+        XCTAssertEqual(m.preConfirmLatestBackup, snap)
+        XCTAssertFalse(m.preConfirmProbeFailed)
+    }
+
+    func testRestoreConfirmingFromRelaunchOnlyAppliesFromIdle() {
+        var m = sm(.backingUp)
+        m.restoreConfirmingFromRelaunch(latestBackupPath: URL(fileURLWithPath: "/x"), entryProbeFailed: false)
+        XCTAssertEqual(m.state, .backingUp, "must not bulldoze a live state")
+    }
+
     // MARK: - Probe helpers used by the menu
 
     func testIsManualEjectAllowed_matchesGuardTable() {
@@ -218,36 +294,26 @@ final class StateMachineTests: XCTestCase {
         XCTAssertEqual(m.state, .backingUp)
 
         let oldSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
-        _ = m.handle(.confirmingEntered(latestBackupPath: oldSnap))
+        _ = m.handle(.confirmingEntered(latestBackupPath: oldSnap, entryProbeFailed: false))
         XCTAssertEqual(m.state, .confirming)
 
         let newSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-110000")
-        let exitCmds = accept(m.handle(.confirmingExited(newLatestBackupPath: newSnap))) ?? []
+        let exitCmds = accept(m.handle(.confirmingExited(newLatestBackupPath: newSnap, exitProbeFailed: false))) ?? []
         XCTAssertEqual(m.state, .idle)
-        XCTAssertTrue(exitCmds.contains(.attemptAutoEjectIfAllowed))
+        XCTAssertTrue(exitCmds.contains(.signalBackupCompleted))
 
-        // Coordinator decides auto-eject is allowed → drives manualEjectRequested(false).
-        _ = m.handle(.manualEjectRequested(lock: false))
+        _ = m.handle(.ejectRequested(lock: false, source: .auto))
         XCTAssertEqual(m.state, .ejecting)
         _ = m.handle(.ejectAttemptCompleted(success: true, errorSummary: nil))
         XCTAssertEqual(m.state, .idle)
     }
 
-    func testCancellationPath_backingUpThenBackupStopped_doesNotAutoEject() {
+    func testCancellationPath_backingUpThenBackupStopped_doesNotSignalCompletion() {
         var m = sm(.idle)
         _ = m.handle(.backupBegan)
         let cmds = accept(m.handle(.backupStopped)) ?? []
         XCTAssertEqual(m.state, .idle)
-        XCTAssertFalse(cmds.contains(.attemptAutoEjectIfAllowed))
-    }
-
-    func testCancellationPath_confirmingThenSameSnapshot_doesNotAutoEject() {
-        let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
-        var m = sm(.backingUp)
-        _ = m.handle(.confirmingEntered(latestBackupPath: snap))
-        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: snap))) ?? []
-        XCTAssertEqual(m.state, .idle)
-        XCTAssertFalse(cmds.contains(.attemptAutoEjectIfAllowed))
+        XCTAssertFalse(cmds.contains(.signalBackupCompleted))
     }
 
     func testStallPath_backingUp_stallDetected_returnsToIdleWithoutEject() {
@@ -255,7 +321,7 @@ final class StateMachineTests: XCTestCase {
         _ = m.handle(.backupBegan)
         let cmds = accept(m.handle(.stallDetected)) ?? []
         XCTAssertEqual(m.state, .idle)
-        XCTAssertFalse(cmds.contains(.attemptAutoEjectIfAllowed))
+        XCTAssertFalse(cmds.contains(.signalBackupCompleted))
         XCTAssertFalse(cmds.contains(.beginEject(lock: false)))
     }
 
@@ -264,7 +330,7 @@ final class StateMachineTests: XCTestCase {
         _ = m.handle(.ejectAttemptCompleted(success: false, errorSummary: "busy: lsof says mdworker holds /Volumes/Backup"))
         XCTAssertEqual(m.state, .idleEjectFailed)
 
-        _ = m.handle(.manualEjectRequested(lock: false))
+        _ = m.handle(.ejectRequested(lock: false, source: .manual))
         XCTAssertEqual(m.state, .ejecting)
         _ = m.handle(.ejectAttemptCompleted(success: true, errorSummary: nil))
         XCTAssertEqual(m.state, .idle)
