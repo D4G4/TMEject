@@ -21,8 +21,13 @@ final class AppCoordinator: ObservableObject {
     private let locker: ScreenLocker
     private let confirmDialog: ConfirmDialog
     private let clock: MonotonicClock
+    private let notifier: SystemNotifier
+    private let toastPresenter: ToastPresenter?
     private var observer: PollingObserver?
     private var lastResolvedDestination: ResolvedDestination?
+
+    // Toast suppression default — Step 10's Advanced tab UI flips this.
+    private static let toastsEnabledKey = "co.dls.tmeject.toastsEnabled"
 
     // M3: UserDefaults key for the snapshot path captured at confirming-entry.
     private static let preConfirmPathKey = "co.dls.tmeject.preConfirmLatestBackupPath"
@@ -34,7 +39,9 @@ final class AppCoordinator: ObservableObject {
         defaults: UserDefaults = .standard,
         locker: ScreenLocker = LiveScreenLocker(),
         confirmDialog: ConfirmDialog = LiveConfirmDialog(),
-        clock: MonotonicClock = SystemClock()
+        clock: MonotonicClock = SystemClock(),
+        notifier: SystemNotifier = LiveSystemNotifier(),
+        toastPresenter: ToastPresenter? = nil
     ) {
         self.tmutil = tmutil
         self.ejector = ejector
@@ -43,7 +50,16 @@ final class AppCoordinator: ObservableObject {
         self.locker = locker
         self.confirmDialog = confirmDialog
         self.clock = clock
+        self.notifier = notifier
+        self.toastPresenter = toastPresenter
+
+        // Default-on for first run. Once a value exists in defaults we don't overwrite it.
+        if defaults.object(forKey: Self.toastsEnabledKey) == nil {
+            defaults.set(true, forKey: Self.toastsEnabledKey)
+        }
     }
+
+    var toastsEnabled: Bool { defaults.bool(forKey: Self.toastsEnabledKey) }
 
     func start() {
         guard observer == nil else { return }
@@ -172,8 +188,12 @@ final class AppCoordinator: ObservableObject {
         case .showToast(let level, let message):
             lastToast = ToastMessage(level: level, text: message)
             TMEjectLog.ui.info("Toast [\(level.rawValue)]: \(message)")
+            if toastsEnabled {
+                toastPresenter?.present(level: level, message: message)
+            }
         case .notify(let title, let body):
             TMEjectLog.ui.info("Notify: \(title) — \(body)")
+            await notifier.deliver(title: title, body: body, category: categorize(title: title))
         case .setLastError(let err):
             lastError = err
             if let err { TMEjectLog.state.info("LastError: \(err)") }
@@ -189,6 +209,22 @@ final class AppCoordinator: ObservableObject {
         case .showQuitDuringEjectWarning:
             TMEjectLog.ui.info("(placeholder) Quit-during-eject warning")
         }
+    }
+
+    private func categorize(title: String) -> NotificationCategory {
+        // Title-based dispatch keeps the state machine free of UNUserNotificationCenter
+        // category strings.
+        if title.contains("Eject failed") { return .ejectFailurePersistent }
+        if title.contains("Backup") && title.contains("complete") { return .generic }
+        if title.contains("Backup") { return .backupFailure }
+        return .generic
+    }
+
+    /// Called by Settings (Step 10) or onboarding (Step 11) when the user opts in to auto-eject.
+    /// Returns whether system notifications are available — caller can fall back to the in-app
+    /// toast + lastError surface when false.
+    func requestNotificationAuthIfNeeded() async -> Bool {
+        await notifier.requestAuthorizationIfNeeded()
     }
 
     private func runEject(lock: Bool) async {
