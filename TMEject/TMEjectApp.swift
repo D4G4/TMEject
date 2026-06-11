@@ -2,6 +2,11 @@ import SwiftUI
 
 @main
 struct TMEjectApp: App {
+    init() {
+        TMEjectLog.pruneOldLogs()
+        TMEjectLog.app.info("TMEject launched")
+    }
+
     var body: some Scene {
         MenuBarExtra("TMEject", systemImage: "eject.fill") {
             MenuBarContentView()
