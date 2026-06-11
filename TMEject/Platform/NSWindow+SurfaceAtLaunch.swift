@@ -4,6 +4,19 @@ extension NSUserInterfaceItemIdentifier {
     static let tmejectSetupWindow = NSUserInterfaceItemIdentifier("TMEjectSetupWindow")
 }
 
+/// User-close handler for a setup window. macOS' `windowShouldClose` only fires on user-initiated
+/// closes (red button, Cmd-W, performClose) — programmatic `orderOut` skips this delegate, so we
+/// can hand off "user closed it" semantics distinctly from "the controller dismissed it." Returns
+/// false because the closure handles the orderOut itself.
+final class SetupWindowCloseDelegate: NSObject, NSWindowDelegate {
+    private let onClose: () -> Void
+    init(onClose: @escaping () -> Void) { self.onClose = onClose }
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        onClose()
+        return false
+    }
+}
+
 extension NSWindow {
     /// Standard chrome (titlebar + close button) for setup/preferences windows. Deliberately
     /// NOT fullSizeContentView — that combination triggers the SwiftUI safe-area oscillation
