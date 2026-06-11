@@ -15,10 +15,19 @@ final class AppCoordinator: ObservableObject {
 
     private var machine = StateMachine()
     private let tmutil: TMUtilClient
+    private let ejector: Ejector
+    private let resolver: DestinationResolver
     private var observer: PollingObserver?
+    private var lastResolvedDestination: ResolvedDestination?
 
-    init(tmutil: TMUtilClient = LiveTMUtilClient()) {
+    init(
+        tmutil: TMUtilClient = LiveTMUtilClient(),
+        ejector: Ejector = Ejector(),
+        resolver: DestinationResolver = DestinationResolver()
+    ) {
         self.tmutil = tmutil
+        self.ejector = ejector
+        self.resolver = resolver
     }
 
     func start() {
@@ -100,9 +109,33 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func beginEjectPlaceholder(lock: Bool) async {
-        // Real ejector lands in Step 7. For Step 6 wiring we log and immediately complete
-        // so the state machine returns to idle — letting an end-to-end smoke loop close.
-        TMEjectLog.eject.info("(placeholder) beginEject lock=\(lock) — Step 7 will implement DADiskUnmount")
-        await deliver(.ejectAttemptCompleted(success: false, errorSummary: "Step 7 not yet implemented"))
+        // Find the destination volume to eject.
+        let destinations: [DestinationInfo]
+        do {
+            destinations = try await tmutil.destinationInfo()
+        } catch {
+            TMEjectLog.eject.error("destinationInfo failed: \(error)")
+            await deliver(.ejectAttemptCompleted(success: false,
+                                                  errorSummary: "Could not list TM destinations: \(error)"))
+            return
+        }
+        guard let destination = destinations.first(where: { $0.lastDestination }) ?? destinations.first else {
+            await deliver(.ejectAttemptCompleted(success: false,
+                                                  errorSummary: "No Time Machine destination configured"))
+            return
+        }
+        guard let resolved = resolver.resolve(destinationID: destination.id) else {
+            await deliver(.ejectAttemptCompleted(success: false,
+                                                  errorSummary: "Destination \(destination.name) not mounted"))
+            return
+        }
+        lastResolvedDestination = resolved
+        TMEjectLog.eject.info("Ejecting \(resolved.volumeName ?? resolved.bsdName) at \(resolved.volumeURL.path)")
+        let report = await ejector.eject(volumeURL: resolved.volumeURL)
+        if lock && report.succeeded {
+            // Lock side-effect lands in Step 8.
+            TMEjectLog.eject.info("(placeholder) Lock-after-eject not yet wired — will land in Step 8")
+        }
+        await deliver(.ejectAttemptCompleted(success: report.succeeded, errorSummary: report.lastError))
     }
 }
