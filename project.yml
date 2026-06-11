@@ -5,6 +5,10 @@ options:
     macOS: "14.0"
   createIntermediateGroups: true
   developmentLanguage: en
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: "2.0.0"
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -19,6 +23,8 @@ targets:
     platform: macOS
     sources:
       - path: TMEject
+    dependencies:
+      - package: KeyboardShortcuts
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.dls.tmeject

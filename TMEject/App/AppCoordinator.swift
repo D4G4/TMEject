@@ -18,6 +18,9 @@ final class AppCoordinator: ObservableObject {
     private let ejector: Ejector
     private let resolver: DestinationResolver
     private let defaults: UserDefaults
+    private let locker: ScreenLocker
+    private let confirmDialog: ConfirmDialog
+    private let clock: MonotonicClock
     private var observer: PollingObserver?
     private var lastResolvedDestination: ResolvedDestination?
 
@@ -28,12 +31,18 @@ final class AppCoordinator: ObservableObject {
         tmutil: TMUtilClient = LiveTMUtilClient(),
         ejector: Ejector = Ejector(),
         resolver: DestinationResolver = DestinationResolver(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        locker: ScreenLocker = LiveScreenLocker(),
+        confirmDialog: ConfirmDialog = LiveConfirmDialog(),
+        clock: MonotonicClock = SystemClock()
     ) {
         self.tmutil = tmutil
         self.ejector = ejector
         self.resolver = resolver
         self.defaults = defaults
+        self.locker = locker
+        self.confirmDialog = confirmDialog
+        self.clock = clock
     }
 
     func start() {
@@ -65,8 +74,24 @@ final class AppCoordinator: ObservableObject {
         Task { await deliver(.ejectRequested(lock: lock, source: .manual)) }
     }
 
+    /// "Eject & Lock" path. Differs from `requestManualEject(lock: true)`:
+    /// - in `backingUp` / `confirming`: prompts via ConfirmDialog, then stops the backup,
+    ///   waits for tmutil to settle, and only then drives the eject.
+    /// - in `ejecting`: ignored (menu item is disabled — defense in depth).
+    /// - otherwise: equivalent to requestManualEject(lock: true).
+    func requestEjectAndLock() {
+        UIActionLogger.logAction("Request: Eject & Lock", context: "state=\(state)")
+        Task { await self.runEjectAndLock() }
+    }
+
     var isManualEjectAllowed: Bool {
         StateMachine.isManualEjectAllowed(in: state)
+    }
+
+    /// Eject & Lock is enabled in every state except `.ejecting` per spec. The stop-backup
+    /// confirmation prompt handles backingUp/confirming.
+    var isEjectAndLockAllowed: Bool {
+        state != .ejecting
     }
 
     // MARK: - M3 relaunch restore
@@ -97,6 +122,11 @@ final class AppCoordinator: ObservableObject {
     }
 
     // MARK: - Event delivery
+
+    // Test seam for EjectAndLockTests; drives the state machine without the observer chain.
+    func deliverFromTest(_ event: AppEvent) async {
+        await deliver(event)
+    }
 
     private func deliver(_ event: AppEvent) async {
         TMEjectLog.state.debug("Event: \(event)")
@@ -185,8 +215,93 @@ final class AppCoordinator: ObservableObject {
         TMEjectLog.eject.info("Ejecting \(resolved.volumeName ?? resolved.bsdName) at \(resolved.volumeURL.path)")
         let report = await ejector.eject(volumeURL: resolved.volumeURL)
         if lock && report.succeeded {
-            TMEjectLog.eject.info("(placeholder) Lock-after-eject not yet wired — will land in Step 8")
+            let lockResult = await locker.lockScreen()
+            switch lockResult {
+            case .success:
+                TMEjectLog.eject.info("Screen locked after eject")
+            case .failure(let err):
+                TMEjectLog.eject.error("Lock-after-eject failed: \(err)")
+                // Eject still succeeded; surface the lock failure as lastError but report
+                // the eject success so the state machine doesn't transition to idleEjectFailed.
+                lastError = "Eject succeeded but lock failed: \(err)"
+            }
         }
         await deliver(.ejectAttemptCompleted(success: report.succeeded, errorSummary: report.lastError))
+    }
+
+    // MARK: - Eject & Lock flow
+
+    /// Wait up to `cap` for `tmutil status -X` to report `Running=false`. When it settles,
+    /// eagerly drive the state machine to `.idle` matching the prior state — the observer's
+    /// next poll might be up to 5s out and the user is mid-flow.
+    /// Returns true if it settled, false on timeout.
+    private func waitForBackupToStop(priorState: AppState, cap: TimeInterval) async -> Bool {
+        let start = clock.now()
+        while clock.now() - start < cap {
+            do {
+                let status = try await tmutil.status()
+                if !status.running {
+                    switch priorState {
+                    case .confirming:
+                        // Cancelled — no new-snapshot success; mark as exit-probe-failed so the
+                        // state machine refuses to claim success on the way out.
+                        await deliver(.confirmingExited(newLatestBackupPath: nil, exitProbeFailed: true))
+                    case .backingUp:
+                        await deliver(.backupStopped)
+                    default:
+                        break
+                    }
+                    return true
+                }
+            } catch {
+                TMEjectLog.eject.error("waitForBackupToStop tmutil status failed: \(error)")
+                return false
+            }
+            try? await clock.sleep(seconds: 1)
+        }
+        return false
+    }
+
+    private func runEjectAndLock() async {
+        switch state {
+        case .ejecting:
+            return
+        case .idle, .idleEjectFailed:
+            await deliver(.ejectRequested(lock: true, source: .manual))
+        case .backingUp, .confirming:
+            // Pause the observer-driven event stream of the in-flight backup by asking the user
+            // first. If they confirm we stop the backup, wait for tmutil to settle, then drive
+            // the eject. State machine transitions normally: backingUp/confirming → idle on
+            // backupStopped/confirmingExited → ejecting on ejectRequested.
+            let yes = await confirmDialog.confirmStopAndEject()
+            guard yes else {
+                UIActionLogger.logAction("Eject & Lock: cancelled at confirmation")
+                return
+            }
+            UIActionLogger.logAction("Eject & Lock: stopping backup")
+            let priorState = state
+            do {
+                try await tmutil.stopBackup()
+            } catch {
+                lastError = "tmutil stopbackup failed: \(error)"
+                TMEjectLog.eject.error("tmutil stopbackup failed: \(error)")
+                return
+            }
+            let settled = await waitForBackupToStop(priorState: priorState, cap: 30)
+            if !settled {
+                lastError = "Timed out waiting for backup to stop (30s)"
+                TMEjectLog.eject.error("Backup did not settle within 30s after stopbackup")
+                return
+            }
+            // The observer should have driven the state machine through backupStopped /
+            // confirmingExited by now. If we somehow still aren't in an eject-eligible state,
+            // refuse rather than fight the guard table.
+            guard StateMachine.isManualEjectAllowed(in: state) else {
+                lastError = "After stopbackup state is \(state) — not eject-eligible"
+                TMEjectLog.eject.error("Post-stopbackup state \(state) is not eject-eligible")
+                return
+            }
+            await deliver(.ejectRequested(lock: true, source: .manual))
+        }
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import KeyboardShortcuts
 
 @main
 struct TMEjectApp: App {
@@ -49,10 +50,15 @@ struct MenuBarContentView: View {
             }
             .disabled(!coordinator.isManualEjectAllowed)
 
-            Button("Eject & Lock") {
-                coordinator.requestManualEject(lock: true)
+            HStack(spacing: 4) {
+                Button("Eject & Lock") {
+                    coordinator.requestEjectAndLock()
+                }
+                .disabled(!coordinator.isEjectAndLockAllowed)
+                Spacer()
+                KeyboardShortcuts.Recorder(for: .ejectAndLock)
+                    .frame(width: 90)
             }
-            .disabled(!coordinator.isManualEjectAllowed)
 
             Divider()
 
@@ -68,7 +74,7 @@ struct MenuBarContentView: View {
             .keyboardShortcut("q")
         }
         .padding(12)
-        .frame(width: 260)
+        .frame(width: 280)
     }
 
     private func headline(for state: AppState) -> String {
