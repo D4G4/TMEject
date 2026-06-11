@@ -1,0 +1,58 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+build/
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# XcodeGen-generated (regenerate from project.yml)
+*.xcodeproj/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+Packages/
+
+# Sparkle release artifacts (never commit signed builds)
+releases/
+*.zip
+
+# Notarization secrets
+.notarytool-credentials
+ExportOptions.plist
+
+# Logs
+*.log
+
+# Worktrees (D4G4 convention)
+features/
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+*.swp
+*.swo
+.env
+.env.local
