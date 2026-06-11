@@ -31,3 +31,16 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: TMEject
         CODE_SIGN_ENTITLEMENTS: TMEject/TMEject.entitlements
         ENABLE_APP_SANDBOX: NO
+  TMEjectTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: TMEjectTests
+    dependencies:
+      - target: TMEject
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.dls.tmeject.tests
+        GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TMEject.app/Contents/MacOS/TMEject"
