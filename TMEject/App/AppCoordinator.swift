@@ -227,6 +227,24 @@ final class AppCoordinator: ObservableObject {
         await notifier.requestAuthorizationIfNeeded()
     }
 
+    /// Resolves the current Time Machine destination via DiskArbitration and reports what an
+    /// eject would target — without actually unmounting. Used by the Advanced tab's "Test
+    /// eject (dry run)" button to verify the destination wiring + DA permissions.
+    func dryRunEject() async -> String {
+        do {
+            let destinations = try await tmutil.destinationInfo()
+            guard let destination = destinations.first(where: { $0.lastDestination }) ?? destinations.first else {
+                return "No Time Machine destination configured."
+            }
+            guard let resolved = resolver.resolve(destinationID: destination.id) else {
+                return "Destination \(destination.name) (UUID \(destination.id.uuidString)) is not currently mounted."
+            }
+            return "Would eject \(resolved.volumeName ?? resolved.bsdName) at \(resolved.volumeURL.path) (BSD \(resolved.bsdName))."
+        } catch {
+            return "tmutil destinationinfo failed: \(error)"
+        }
+    }
+
     private func runEject(lock: Bool) async {
         let destinations: [DestinationInfo]
         do {

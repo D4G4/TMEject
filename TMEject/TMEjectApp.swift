@@ -62,6 +62,14 @@ struct MenuBarContentView: View {
 
             Divider()
 
+            Button("Settings…") {
+                UIActionLogger.menuItemSelected("Open Settings")
+                if let delegate = NSApp.delegate as? AppDelegate {
+                    delegate.preferencesController.show()
+                }
+            }
+            .keyboardShortcut(",", modifiers: [.command])
+
             Button("Reveal logs in Finder") {
                 LogExporter.revealInFinder()
                 UIActionLogger.menuItemSelected("Reveal logs")

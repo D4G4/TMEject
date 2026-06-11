@@ -5,10 +5,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let coordinator: AppCoordinator
     private let toastOverlay = ToastOverlay()
     private var hotkeyMonitor: HotkeyMonitor?
+    lazy var preferencesController: PreferencesWindowController = {
+        PreferencesWindowController(coordinator: coordinator)
+    }()
 
     override init() {
-        // ToastOverlay must outlive the coordinator's lifetime; hand it in at construction
-        // so the coordinator can present toasts without re-checking optionality each time.
         let overlay = self.toastOverlay
         self.coordinator = AppCoordinator(toastPresenter: overlay)
         super.init()
