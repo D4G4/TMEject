@@ -9,9 +9,7 @@ struct GeneralTab: View {
     @AppStorage(SettingsKey.cooldownMinutes)  private var cooldownMinutes = 30
     @AppStorage(SettingsKey.notifyOnBackupFailure) private var notifyOnBackupFailure = true
 
-    @State private var loginItemStatus: LoginItemStatus = .notRegistered
     @State private var loginItemError: String?
-    private let loginItem: LoginItemManaging = LiveLoginItemManager()
 
     var body: some View {
         Form {
@@ -48,23 +46,17 @@ struct GeneralTab: View {
 
             Section("Launch") {
                 Toggle("Launch TMEject at login", isOn: Binding(
-                    get: { loginItemStatus == .enabled },
+                    get: { coordinator.loginItemStatus == .enabled },
                     set: { newValue in
-                        UIActionLogger.settingChanged("launchAtLogin", value: "\(newValue)")
                         do {
-                            if newValue {
-                                try loginItem.register()
-                            } else {
-                                try loginItem.unregister()
-                            }
+                            try coordinator.setLaunchAtLogin(newValue)
                             loginItemError = nil
                         } catch {
                             loginItemError = "\(error)"
                         }
-                        loginItemStatus = loginItem.currentStatus()
                     }
                 ))
-                if loginItemStatus == .requiresApproval {
+                if coordinator.loginItemStatus == .requiresApproval {
                     HStack(alignment: .firstTextBaseline) {
                         Text("macOS needs your approval to launch TMEject at login.")
                             .font(.caption)
@@ -95,7 +87,7 @@ struct GeneralTab: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            loginItemStatus = loginItem.currentStatus()
+            coordinator.refreshLoginItemStatus()
         }
     }
 }

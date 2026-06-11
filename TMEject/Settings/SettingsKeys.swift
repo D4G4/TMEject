@@ -12,6 +12,7 @@ enum SettingsKey {
     static let hasSeenLaunchHUD        = "co.dls.tmeject.hasSeenLaunchHUD"
     static let betaChannel             = "co.dls.tmeject.betaChannel"
     static let preConfirmLatestBackup  = "co.dls.tmeject.preConfirmLatestBackupPath"
+    static let launchAtLogin           = "co.dls.tmeject.launchAtLogin"     // @AppStorage mirror
 }
 
 enum CooldownOption: Int, CaseIterable, Identifiable {

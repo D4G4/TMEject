@@ -6,6 +6,7 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var state: AppState = .idle
     @Published private(set) var lastError: String?
     @Published private(set) var lastToast: ToastMessage?
+    @Published private(set) var loginItemStatus: LoginItemStatus = .notRegistered
 
     struct ToastMessage: Equatable {
         let level: AppCommand.ToastLevel
@@ -23,6 +24,7 @@ final class AppCoordinator: ObservableObject {
     private let clock: MonotonicClock
     private let notifier: SystemNotifier
     private let toastPresenter: ToastPresenter?
+    private let loginItem: LoginItemManaging
     private var observer: PollingObserver?
     private var lastResolvedDestination: ResolvedDestination?
 
@@ -41,7 +43,8 @@ final class AppCoordinator: ObservableObject {
         confirmDialog: ConfirmDialog = LiveConfirmDialog(),
         clock: MonotonicClock = SystemClock(),
         notifier: SystemNotifier = LiveSystemNotifier(),
-        toastPresenter: ToastPresenter? = nil
+        toastPresenter: ToastPresenter? = nil,
+        loginItem: LoginItemManaging = LiveLoginItemManager()
     ) {
         self.tmutil = tmutil
         self.ejector = ejector
@@ -52,11 +55,32 @@ final class AppCoordinator: ObservableObject {
         self.clock = clock
         self.notifier = notifier
         self.toastPresenter = toastPresenter
+        self.loginItem = loginItem
 
-        // Default-on for first run. Once a value exists in defaults we don't overwrite it.
         if defaults.object(forKey: Self.toastsEnabledKey) == nil {
             defaults.set(true, forKey: Self.toastsEnabledKey)
         }
+        self.loginItemStatus = loginItem.currentStatus()
+        defaults.set(self.loginItemStatus == .enabled, forKey: SettingsKey.launchAtLogin)
+    }
+
+    /// Polled at popover/window appearances. Cheap (single SMAppService.status read).
+    /// Keeps the @AppStorage mirror in sync with reality — if the user toggled the OS pane
+    /// directly, we'll observe it here.
+    func refreshLoginItemStatus() {
+        let now = loginItem.currentStatus()
+        loginItemStatus = now
+        defaults.set(now == .enabled, forKey: SettingsKey.launchAtLogin)
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) throws {
+        if enabled {
+            try loginItem.register()
+        } else {
+            try loginItem.unregister()
+        }
+        UIActionLogger.settingChanged("launchAtLogin", value: "\(enabled)")
+        refreshLoginItemStatus()
     }
 
     var toastsEnabled: Bool { defaults.bool(forKey: Self.toastsEnabledKey) }

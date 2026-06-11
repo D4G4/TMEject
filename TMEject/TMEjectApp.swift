@@ -43,6 +43,24 @@ struct MenuBarContentView: View {
                     .lineLimit(3)
             }
 
+            if coordinator.loginItemStatus == .requiresApproval {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Approve login-at-launch in System Settings")
+                            .font(.caption)
+                        Button("Open Login Items") {
+                            UIActionLogger.buttonTapped("Open Login Items", context: "Menu Bar")
+                            NSWorkspace.shared.open(LoginItemSettings.url)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+
             Divider()
 
             Button("Eject now") {
@@ -83,6 +101,9 @@ struct MenuBarContentView: View {
         }
         .padding(12)
         .frame(width: 280)
+        .onAppear {
+            coordinator.refreshLoginItemStatus()
+        }
     }
 
     private func headline(for state: AppState) -> String {
