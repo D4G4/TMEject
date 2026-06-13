@@ -24,6 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         monitor.register()
         hotkeyMonitor = monitor
         presentLaunchSurfacesIfNeeded()
+        // Sparkle: kick off a silent background check after launch settles. The shared
+        // updater controller is created here (singleton) so the first reference to it
+        // matters — it starts the periodic check loop. No-op in DEBUG builds without a
+        // real SUPublicEDKey.
+        TMEjectUpdater.shared.checkForUpdatesInBackgroundAfterLaunchSettle()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

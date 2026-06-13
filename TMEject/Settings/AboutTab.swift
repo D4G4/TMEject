@@ -40,7 +40,7 @@ struct AboutTab: View {
 
             Button("Check for Updates…") {
                 UIActionLogger.buttonTapped("Check for Updates", context: "About")
-                // Sparkle wiring lands in Step 14.
+                TMEjectUpdater.shared.checkForUpdates()
             }
             Toggle("Receive beta updates", isOn: $betaChannel)
                 .onChange(of: betaChannel) { _, on in
