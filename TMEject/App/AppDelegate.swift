@@ -28,7 +28,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationWillTerminate(_ notification: Notification) {
         TMEjectLog.app.info("applicationWillTerminate")
-        Task { await coordinator.stop() }
+        // The `.appWillTerminate` state-machine event is what produces the .ejecting warning
+        // surface (Decision #10 — `showQuitDuringEjectWarning`). Without delivering it here,
+        // that warning is dead code in production.
+        Task {
+            await coordinator.dispatch(.appWillTerminate)
+            await coordinator.stop()
+        }
+        // TODO(Step-15 polish): switch to `applicationShouldTerminate` returning .terminateLater
+        // so the warning can render and the user can confirm before shutdown completes.
     }
 
     /// macOS routes Dock-icon clicks (and re-opens) through this. We use it to bring any

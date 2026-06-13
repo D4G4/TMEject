@@ -1,7 +1,7 @@
 import Foundation
 
 struct LsofHolder: Equatable, Sendable {
-    let command: String      // e.g. "mds_stores"
+    let command: String      // e.g. "mds_stores", "Google Chrome Helper"
     let pid: Int             // e.g. 412
 
     var humanSummary: String { "\(command) (pid \(pid))" }
@@ -19,9 +19,13 @@ struct LiveLsofProbe: LsofProbe {
     }
 
     func holdersOf(volumePath: String) async -> [LsofHolder] {
-        // `lsof +f -- /Volumes/<name>` lists every open file under that mount point.
-        // Default human-readable output gives us COMMAND and PID in the first two columns;
-        // that's all we need for the "Last error" surface.
+        // `lsof -Fpcn <mountpoint>` — when the path argument is a mount point, lsof matches
+        // by fsid and returns every process holding ANY file on that filesystem, INCLUDING
+        // files in subdirectories. The previous `lsof +f -- <path>` only matched the literal
+        // path (a Time Machine drive's real holders — mds_stores, backupd — sit on files inside
+        // /Volumes/Backup/Backups.backupdb/… and were silently invisible).
+        // `-Fpcn` emits field-mode output (`p<pid>\nc<command>\nn<path>`) which parses
+        // unambiguously even when the command name contains spaces (e.g. "Google Chrome Helper").
         let output: String
         do {
             output = try await runLsof(volumePath: volumePath)
@@ -33,20 +37,37 @@ struct LiveLsofProbe: LsofProbe {
     }
 
     func parse(lsofOutput: String) -> [LsofHolder] {
-        var seen = Set<String>()
         var holders: [LsofHolder] = []
-        let lines = lsofOutput.split(separator: "\n", omittingEmptySubsequences: true)
-        for (idx, line) in lines.enumerated() {
-            if idx == 0 { continue }                              // header: COMMAND PID USER FD TYPE …
-            let cols = line.split(separator: " ", omittingEmptySubsequences: true)
-            guard cols.count >= 2 else { continue }
-            let cmd = String(cols[0])
-            guard let pid = Int(cols[1]) else { continue }
-            let key = "\(cmd)-\(pid)"
-            if seen.insert(key).inserted {
-                holders.append(LsofHolder(command: cmd, pid: pid))
+        var seen = Set<String>()
+        var currentPid: Int?
+        var currentCommand: String?
+
+        func flushIfReady() {
+            if let pid = currentPid, let cmd = currentCommand {
+                let key = "\(cmd)-\(pid)"
+                if seen.insert(key).inserted {
+                    holders.append(LsofHolder(command: cmd, pid: pid))
+                }
             }
         }
+
+        for line in lsofOutput.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let prefix = line.first else { continue }
+            let value = String(line.dropFirst())
+            switch prefix {
+            case "p":
+                // A new record starts here; emit the previous one if it was ready.
+                flushIfReady()
+                currentPid = Int(value)
+                currentCommand = nil
+            case "c":
+                currentCommand = value
+            default:
+                // f (descriptor), n (name), t (type), a (access mode), etc. — ignored.
+                break
+            }
+        }
+        flushIfReady()
         return holders
     }
 
@@ -54,7 +75,7 @@ struct LiveLsofProbe: LsofProbe {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: lsofPath)
-            proc.arguments = ["+f", "--", volumePath]
+            proc.arguments = ["-Fpcn", volumePath]
             let outPipe = Pipe()
             proc.standardOutput = outPipe
             proc.standardError = Pipe()

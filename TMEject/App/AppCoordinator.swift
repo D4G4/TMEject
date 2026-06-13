@@ -235,6 +235,38 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// Called by Ejector after each unmount attempt. We surface the holder + retry countdown
+    /// in `lastError` so the menu bar reflects progress mid-9-min retry window. The state
+    /// machine does NOT see this — it's a coordinator-side UI update only; state stays
+    /// `.ejecting` until the final report.
+    private func handleEjectProgress(_ attempt: EjectAttempt) {
+        switch attempt.result {
+        case .success, .other:
+            // Final success / non-retryable failure — the EjectReport drives the eventual
+            // `.ejectAttemptCompleted` event, which calls setLastError with the final value.
+            // Nothing to update here.
+            return
+        case .busy(let message):
+            let holderSummary = attempt.holders.isEmpty
+                ? "no holders found by lsof — \(message)"
+                : "held by \(attempt.holders.map(\.humanSummary).joined(separator: ", "))"
+            let countdown: String
+            if let next = attempt.nextRetryDelay {
+                countdown = " · retrying in \(Int(next))s"
+            } else {
+                countdown = " · no more retries"
+            }
+            lastError = "Busy attempt \(attempt.attemptNumber)/\(attempt.totalAttempts): \(holderSummary)\(countdown)"
+        }
+    }
+
+    /// Public entry point for AppDelegate / hot paths that need to drive the state machine
+    /// outside the observer loop (Step 12.5 fix for applicationWillTerminate not delivering
+    /// `.appWillTerminate`).
+    func dispatch(_ event: AppEvent) async {
+        await deliver(event)
+    }
+
     private func categorize(title: String) -> NotificationCategory {
         // Title-based dispatch keeps the state machine free of UNUserNotificationCenter
         // category strings.
@@ -291,7 +323,10 @@ final class AppCoordinator: ObservableObject {
         }
         lastResolvedDestination = resolved
         TMEjectLog.eject.info("Ejecting \(resolved.volumeName ?? resolved.bsdName) at \(resolved.volumeURL.path)")
-        let report = await ejector.eject(volumeURL: resolved.volumeURL)
+        let report = await ejector.eject(volumeURL: resolved.volumeURL,
+                                          onAttempt: { [weak self] attempt in
+            await self?.handleEjectProgress(attempt)
+        })
         if lock && report.succeeded {
             let lockResult = await locker.lockScreen()
             switch lockResult {

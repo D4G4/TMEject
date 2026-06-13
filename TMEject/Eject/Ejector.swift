@@ -27,10 +27,6 @@ struct LiveUnmountBridge: UnmountBridge {
             return .other(code: -1, message: "DADiskCreateFromVolumePath returned nil for \(url.path)")
         }
         return await withCheckedContinuation { (cont: CheckedContinuation<DAUnmountResult, Never>) in
-            // DADiskUnmount is volume-only — preserves other partitions on the same physical
-            // disk and surfaces DAReturn distinctly (busy vs IO error). NEVER swap this for
-            // DADiskEject or NSWorkspace.unmountAndEjectDevice — they're whole-device and
-            // swallow the busy code.
             let box = UnmountCallbackBox(continuation: cont)
             let ctx = Unmanaged.passRetained(box).toOpaque()
             DADiskUnmount(disk, DADiskUnmountOptions(kDADiskUnmountOptionDefault), { _, dissenter, ctx in
@@ -60,10 +56,12 @@ struct LiveUnmountBridge: UnmountBridge {
 }
 
 struct EjectAttempt: Equatable, Sendable {
-    let attemptIndex: Int       // 1-based
+    let attemptNumber: Int          // 1-based
+    let totalAttempts: Int
     let result: DAUnmountResult
     let holders: [LsofHolder]
-    let waitedSecondsBefore: TimeInterval
+    /// nil iff there are no more retries (success, non-busy error, or last attempt was busy).
+    let nextRetryDelay: TimeInterval?
 }
 
 struct EjectReport: Sendable {
@@ -78,16 +76,11 @@ struct EjectReport: Sendable {
     }
 }
 
-/// 7-step retry schedule on kDAReturnBusy per locked architecture decision #6.
-/// Backoff sleeps happen BEFORE each retry attempt — the first attempt is immediate.
+/// Locked Architecture Decision #6 — 8 attempts (1 immediate + 7 backoffs: 2, 5, 15, 30, 60, 120, 300s).
 struct EjectorRetrySchedule: Sendable {
     let backoffsSeconds: [TimeInterval]
 
     static let `default` = EjectorRetrySchedule(backoffsSeconds: [0, 2, 5, 15, 30, 60, 120, 300])
-    // ↑ 8 entries → 8 attempts total. Spec says "7 attempts, ~9 min total." 7 RETRIES after
-    // the first immediate attempt = 1 + 7 = 8 attempts. Sums: 2+5+15+30+60+120+300 = 532s ≈ 8.9min.
-    // (The spec wording "7 attempts" lists 7 delays — interpreted as 7 RETRIES after the first
-    // try.) Tests can pass a shortened schedule.
 
     var totalAttempts: Int { backoffsSeconds.count }
 }
@@ -110,7 +103,13 @@ actor Ejector {
         self.schedule = schedule
     }
 
-    func eject(volumeURL: URL) async -> EjectReport {
+    /// `onAttempt` fires after each unmount attempt with the result + (on busy) the holders
+    /// list + the wait until the NEXT retry. Coordinator uses this to update `lastError`
+    /// mid-retry so the menu surface doesn't go silent for the full ~9-min window.
+    func eject(
+        volumeURL: URL,
+        onAttempt: (@Sendable (EjectAttempt) async -> Void)? = nil
+    ) async -> EjectReport {
         var attempts: [EjectAttempt] = []
         for (idx, backoff) in schedule.backoffsSeconds.enumerated() {
             if backoff > 0 {
@@ -125,22 +124,39 @@ actor Ejector {
             let result = await unmount.unmountVolume(at: volumeURL)
             switch result {
             case .success:
-                attempts.append(EjectAttempt(attemptIndex: idx + 1, result: result,
-                                             holders: [], waitedSecondsBefore: backoff))
+                let attempt = EjectAttempt(
+                    attemptNumber: idx + 1, totalAttempts: schedule.totalAttempts,
+                    result: result, holders: [], nextRetryDelay: nil
+                )
+                attempts.append(attempt)
+                await onAttempt?(attempt)
                 TMEjectLog.eject.info("Ejected \(volumeURL.path) on attempt \(idx + 1)")
                 return EjectReport(succeeded: true, attempts: attempts, lastError: nil)
             case .busy(let message):
                 let holders = await lsof.holdersOf(volumePath: volumeURL.path)
-                attempts.append(EjectAttempt(attemptIndex: idx + 1, result: result,
-                                             holders: holders, waitedSecondsBefore: backoff))
-                let holderSummary = holders.isEmpty ? "no holders found by lsof"
-                                                    : holders.map(\.humanSummary).joined(separator: ", ")
+                let nextDelay: TimeInterval? = {
+                    let nextIdx = idx + 1
+                    return nextIdx < schedule.backoffsSeconds.count
+                        ? schedule.backoffsSeconds[nextIdx]
+                        : nil
+                }()
+                let attempt = EjectAttempt(
+                    attemptNumber: idx + 1, totalAttempts: schedule.totalAttempts,
+                    result: result, holders: holders, nextRetryDelay: nextDelay
+                )
+                attempts.append(attempt)
+                await onAttempt?(attempt)
+                let holderSummary = holders.isEmpty
+                    ? "no holders found by lsof"
+                    : holders.map(\.humanSummary).joined(separator: ", ")
                 TMEjectLog.eject.error("Busy on attempt \(idx + 1)/\(schedule.totalAttempts): \(message); held by \(holderSummary)")
             case .other(let code, let message):
-                attempts.append(EjectAttempt(attemptIndex: idx + 1, result: result,
-                                             holders: [], waitedSecondsBefore: backoff))
-                // Non-busy DA errors are not retryable — IO error, no such media, etc.
-                // Surface immediately rather than wasting the 9-min retry window.
+                let attempt = EjectAttempt(
+                    attemptNumber: idx + 1, totalAttempts: schedule.totalAttempts,
+                    result: result, holders: [], nextRetryDelay: nil
+                )
+                attempts.append(attempt)
+                await onAttempt?(attempt)
                 let summary = "DA error code \(code): \(message)"
                 TMEjectLog.eject.error(summary)
                 return EjectReport(succeeded: false, attempts: attempts, lastError: summary)

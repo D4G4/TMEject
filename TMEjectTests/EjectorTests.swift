@@ -2,14 +2,22 @@ import XCTest
 @testable import TMEject
 
 final class LsofProbeParsingTests: XCTestCase {
+    // The probe now consumes `lsof -Fpcn` field-mode output. Old human-format tests were
+    // wrong (their input format wouldn't be what the live impl actually fetches).
 
-    func testParsesCommandAndPidFromLsofOutput() {
+    func testParsesFieldModeOutput() {
         let live = LiveLsofProbe()
         let sample = """
-        COMMAND     PID USER   FD   TYPE DEVICE  SIZE/OFF NODE NAME
-        mds_stores  412 root  cwd    DIR   1,17       640    2 /Volumes/Backup
-        Spotlight   480 root   3r   REG   1,17      1024  100 /Volumes/Backup/Library/Spotlight
-        mds_stores  412 root   4r   REG   1,17      4096  101 /Volumes/Backup/index.bin
+        p412
+        cmds_stores
+        n/Volumes/Backup
+        n/Volumes/Backup/Backups.backupdb/Mac/2026-06-11-100000/index.bin
+        p480
+        cSpotlight
+        n/Volumes/Backup/Library/Spotlight
+        p412
+        cmds_stores
+        n/Volumes/Backup/something
         """
         let holders = live.parse(lsofOutput: sample)
         XCTAssertEqual(holders, [
@@ -19,28 +27,47 @@ final class LsofProbeParsingTests: XCTestCase {
     }
 
     func testEmptyLsofOutputReturnsEmpty() {
-        let holders = LiveLsofProbe().parse(lsofOutput: "")
-        XCTAssertTrue(holders.isEmpty)
+        XCTAssertTrue(LiveLsofProbe().parse(lsofOutput: "").isEmpty)
     }
 
-    func testJunkLinesAreSkipped() {
-        let live = LiveLsofProbe()
+    func testCommandsWithSpacesPreservedIntact() {
+        // Field-mode is line-delimited per field — spaces inside the command name no longer
+        // confuse the parser the way `+f`'s column-aligned output did.
         let sample = """
-        COMMAND     PID USER
-        garbage line without enough columns
-        mdworker    222 root  cwd
+        p1234
+        cGoogle Chrome Helper
+        ftxt
+        n/Volumes/Backup/Library/Chrome
+        p5678
+        ccom.apple.WebKit.WebContent
+        p9999
+        cbackupd
         """
-        let holders = live.parse(lsofOutput: sample)
-        XCTAssertEqual(holders, [LsofHolder(command: "mdworker", pid: 222)])
+        let holders = LiveLsofProbe().parse(lsofOutput: sample)
+        XCTAssertEqual(holders, [
+            LsofHolder(command: "Google Chrome Helper", pid: 1234),
+            LsofHolder(command: "com.apple.WebKit.WebContent", pid: 5678),
+            LsofHolder(command: "backupd", pid: 9999)
+        ])
+    }
+
+    func testRecordWithoutCommandIsDropped() {
+        // A `p` block that finishes without a `c` field shouldn't appear in the output —
+        // we'd have no humanSummary line to report.
+        let sample = """
+        p100
+        n/some/path
+        p200
+        cgoodcmd
+        """
+        let holders = LiveLsofProbe().parse(lsofOutput: sample)
+        XCTAssertEqual(holders, [LsofHolder(command: "goodcmd", pid: 200)])
     }
 }
 
 final class EjectorTests: XCTestCase {
 
-    // 8-attempt schedule: first immediate then 7 backoffs (2, 5, 15, 30, 60, 120, 300)
     private let prodSchedule = EjectorRetrySchedule.default
-
-    // Compressed schedule for tests — same shape, zero waits so the test runs instantly.
     private let testSchedule = EjectorRetrySchedule(backoffsSeconds: Array(repeating: 0, count: 8))
 
     func testProductionScheduleMatchesArchitectureDecision() {
@@ -111,5 +138,57 @@ final class EjectorTests: XCTestCase {
         XCTAssertEqual(uc, 1)
         XCTAssertEqual(lc, 0, "lsof must not run for non-busy errors")
         XCTAssertTrue(report.lastError?.contains("I/O error") == true)
+    }
+
+    // Step-12.5 review M4: callback fires after every attempt with attempt number + holders +
+    // next-retry delay, so the coordinator can update lastError mid-9-min retry window.
+    func testProgressCallbackFiresPerAttemptWithCorrectNextRetryDelay() async {
+        let schedule = EjectorRetrySchedule(backoffsSeconds: [0, 2, 5, 15])
+        let unmount = FakeUnmountBridge()
+        await unmount.enqueue([.busy(message: "b1"), .busy(message: "b2"), .success])
+        let lsof = FakeLsofProbe()
+        await lsof.enqueue([LsofHolder(command: "mds_stores", pid: 412)])
+        await lsof.enqueue([LsofHolder(command: "mdworker", pid: 500)])
+        let ejector = Ejector(unmount: unmount, lsof: lsof, clock: FakeClock(), schedule: schedule)
+
+        // Collect progress events from inside the @Sendable closure.
+        actor Box { var items: [EjectAttempt] = []; func append(_ a: EjectAttempt) { items.append(a) } }
+        let box = Box()
+
+        let report = await ejector.eject(volumeURL: URL(fileURLWithPath: "/Volumes/Backup"),
+                                          onAttempt: { attempt in
+            await box.append(attempt)
+        })
+        XCTAssertTrue(report.succeeded)
+        let items = await box.items
+        XCTAssertEqual(items.count, 3, "callback fires after every attempt")
+        XCTAssertEqual(items[0].attemptNumber, 1)
+        XCTAssertEqual(items[0].totalAttempts, 4)
+        XCTAssertEqual(items[0].holders, [LsofHolder(command: "mds_stores", pid: 412)])
+        XCTAssertEqual(items[0].nextRetryDelay, 2)
+        XCTAssertEqual(items[1].attemptNumber, 2)
+        XCTAssertEqual(items[1].nextRetryDelay, 5,
+                       "next-retry delay should be the NEXT slot's backoff, not the just-elapsed one")
+        XCTAssertEqual(items[2].attemptNumber, 3)
+        XCTAssertNil(items[2].nextRetryDelay,
+                     "success → no next retry")
+    }
+
+    func testProgressCallback_FinalBusyAttempt_NextRetryDelayIsNil() async {
+        let schedule = EjectorRetrySchedule(backoffsSeconds: [0, 0])
+        let unmount = FakeUnmountBridge()
+        await unmount.enqueue([.busy(message: "b1"), .busy(message: "b2")])
+        let lsof = FakeLsofProbe()
+        let ejector = Ejector(unmount: unmount, lsof: lsof, clock: FakeClock(), schedule: schedule)
+
+        actor Box { var items: [EjectAttempt] = []; func append(_ a: EjectAttempt) { items.append(a) } }
+        let box = Box()
+
+        _ = await ejector.eject(volumeURL: URL(fileURLWithPath: "/Volumes/Backup"),
+                                 onAttempt: { a in await box.append(a) })
+        let items = await box.items
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[0].nextRetryDelay, 0, "schedule[1] = 0s")
+        XCTAssertNil(items[1].nextRetryDelay, "no schedule[2] → no next retry")
     }
 }
