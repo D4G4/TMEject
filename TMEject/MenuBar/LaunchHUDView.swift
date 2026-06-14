@@ -6,15 +6,19 @@ struct LaunchHUDView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The arrow pulses up-and-down 1.6s, pointing at where the menu bar icon lives.
+            // Arrow points up-and-LEFT toward the menu bar icon. The HUD itself is anchored
+            // top-right of the screen; the menu bar icon sits to the LEFT of the HUD's
+            // position (menu bar items extend leftward from the system cluster). Anchoring
+            // the arrow trailing — as the design CSS literal `right: 26px` suggested —
+            // would point it at empty space. Leading + arrow.up.left is correct.
             ZStack {
-                Image(systemName: "arrow.up.right")
+                Image(systemName: "arrow.up.left")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Color.ritual)
                     .offset(y: arrowOffset)
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.trailing, 26)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 26)
             .offset(y: -22)
             .onAppear {
                 withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
