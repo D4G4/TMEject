@@ -8,85 +8,35 @@
 <meta name="theme-color" content="#09090b" />
 <link rel="icon" type="image/png" href="assets/icon.png" />
 <link rel="apple-touch-icon" href="assets/icon.png" />
-<link rel="alternate" type="application/rss+xml" title="TMEject updates" href="appcast.xml" />
 <link rel="stylesheet" href="style.css" />
-<style>
-  /* ===== Paged mode: one full screen per section, snap on space/arrows ===== */
-  html.paged { scroll-snap-type: y mandatory; scroll-padding-top: 0; }
-  @media (prefers-reduced-motion: reduce) { html.paged { scroll-snap-type: none; } }
-
-  .page {
-    min-height: 100vh; min-height: 100dvh;
-    display: flex; flex-direction: column; justify-content: center;
-    scroll-snap-align: start; scroll-snap-stop: always;
-    position: relative; padding: 90px 0 52px; overflow: hidden;
-  }
-  .page > .wrap { width: 100%; }
-
-  /* hero: two columns so headline + product shot share one screen */
-  .page-hero .wrap { display: grid; grid-template-columns: 1.04fr 0.96fr; gap: clamp(32px, 5vw, 72px); align-items: center; }
-  .page-hero .hero-head { max-width: none; }
-  .page-hero .hero h1 { font-size: clamp(38px, 4.4vw, 62px); }
-  .page-hero .hero-lead { font-size: clamp(16px, 1.5vw, 18px); margin-top: 20px; }
-  .page-hero .hero-cta { margin-top: 28px; }
-  .page-hero .shot { margin-top: 0; }
-  .page-hero .desk { height: min(58vh, 460px); }
-
-  /* ritual */
-  .page-ritual .ritual-grid { width: 100%; }
-
-  /* features — keep the row inside one screen */
-  .page-features .feat-head { margin-bottom: clamp(20px, 3vh, 40px); }
-  .page-features .feat-head h2 { font-size: clamp(26px, 3.2vw, 40px); }
-  .page-features .feat-head p { font-size: 15.5px; margin-top: 14px; }
-  .page-features .feat-card { padding: 18px 20px 20px; }
-  .page-features .feat-ico { width: 34px; height: 34px; margin-bottom: 14px; }
-  .page-features .feat-card h3 { font-size: 16px; }
-  .page-features .feat-card p { font-size: 13.5px; margin-top: 8px; }
-  .page-features .feat-card .tag { margin-top: 12px; }
-
-  /* download page carries the footer pinned to the bottom */
-  .page-download { justify-content: center; }
-  .page-download .footer { position: absolute; left: 0; right: 0; bottom: 0; border-top: 0.5px solid var(--line); }
-
-  /* page dots */
-  .pagedots { position: fixed; right: 22px; top: 50%; transform: translateY(-50%); z-index: 45; display: flex; flex-direction: column; gap: 14px; }
-  .pagedots a { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,0.22); transition: background 0.2s, transform 0.2s; }
-  .pagedots a:hover { background: rgba(255,255,255,0.45); }
-  .pagedots a.active { background: var(--ritual); transform: scale(1.3); }
-
-  @media (max-width: 880px) {
-    html.paged { scroll-snap-type: none; }
-    .page { min-height: auto; padding: 88px 0 60px; overflow: visible; }
-    .page-hero .wrap { grid-template-columns: 1fr; }
-    .page-hero .desk { height: auto; aspect-ratio: 16/10; }
-    .page-download .footer { position: static; margin-top: 56px; }
-    .pagedots { display: none; }
-  }
-</style>
 <script>document.documentElement.className = 'js paged';</script>
 </head>
 <body>
 
-<a class="skip-link" href="#hero">Skip to content</a>
+<a class="skip-link" href="#main">Skip to content</a>
 
-<!-- ============================================================ NAV -->
-<nav class="nav" id="nav" aria-label="Primary">
-  <div class="wrap">
-    <a class="brand" href="#hero">
-      <span class="mark" aria-hidden="true">
-        <svg width="15" height="15" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg>
-      </span>
-      TMEject
+<!-- ============================================================ MENU BAR (= the site nav) -->
+<div class="macbar" id="macbar" role="navigation" aria-label="Primary">
+  <div class="macbar-left">
+    <a class="logo" href="#hero" aria-label="TMEject home">
+      <svg width="15" height="15" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg>
     </a>
-    <div class="nav-links">
-      <a class="nav-link" href="#ritual">The ritual</a>
-      <a class="nav-link" href="#features">Features</a>
-      <a class="nav-link" href="#states">How it works</a>
-      <a class="btn btn-ghost btn-sm" href="#download">Download</a>
-    </div>
+    <a class="app" href="#hero">TMEject</a>
+    <a class="menu" href="#ritual">The Ritual</a>
+    <a class="menu" href="#features">Features</a>
+    <a class="menu" href="#states">How it works</a>
   </div>
-</nav>
+  <div class="macbar-right">
+    <span class="sysicon" aria-hidden="true"><svg width="19" height="12" viewBox="0 0 26 14" fill="none"><rect x="1" y="3" width="20" height="8" rx="2.2" stroke="currentColor" stroke-width="1.1" opacity="0.6"/><rect x="2.6" y="4.6" width="13" height="4.8" rx="1" fill="currentColor"/><rect x="22.4" y="5.4" width="1.6" height="3.2" rx="0.8" fill="currentColor" opacity="0.6"/></svg></span>
+    <span class="sysicon" aria-hidden="true"><svg width="15" height="12" viewBox="0 0 18 14" fill="none"><circle cx="9" cy="10.6" r="1.3" fill="currentColor"/><path d="M5.2 7.4a5.4 5.4 0 0 1 7.6 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M3 5.1a8.6 8.6 0 0 1 12 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+    <span class="sysicon" aria-hidden="true"><svg width="14" height="13" viewBox="0 0 15 14" fill="none"><circle cx="6.4" cy="6" r="4.2" stroke="currentColor" stroke-width="1.3"/><path d="M9.6 9.2 12.4 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+    <a class="tme-item active" id="tmeIcon" href="#hero" aria-label="TMEject menu bar icon">
+      <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg>
+    </a>
+    <a class="menu dl" href="#download">Download</a>
+    <span class="clock" id="macbarClock" aria-hidden="true">Thu 2:14 PM</span>
+  </div>
+</div>
 
 <!-- page dots -->
 <nav class="pagedots" aria-label="Page navigation">
@@ -97,18 +47,29 @@
   <a href="#download" aria-label="Download"></a>
 </nav>
 
-<main>
+<!-- ============================================================ LIVE POPOVER (persistent, JS-driven) -->
+<div class="pop--hidden" id="livePop" aria-live="polite" aria-label="TMEject menu bar popover preview">
+  <div class="pop-arrow"></div>
+  <span class="pop-gear" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 5.4A2.6 2.6 0 1 0 8 10.6 2.6 2.6 0 0 0 8 5.4Zm0 1.5a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z" fill="currentColor"/><path d="M7 1h2l.3 1.6a5.5 5.5 0 0 1 1.3.55l1.4-.9 1.4 1.4-.9 1.4q.34.6.55 1.3L14.6 7v2l-1.6.3a5.5 5.5 0 0 1-.55 1.3l.9 1.4-1.4 1.4-1.4-.9q-.6.34-1.3.55L9 14.6H7l-.3-1.6a5.5 5.5 0 0 1-1.3-.55l-1.4.9-1.4-1.4.9-1.4a5.5 5.5 0 0 1-.55-1.3L1.4 9V7l1.6-.3q.21-.7.55-1.3l-.9-1.4 1.4-1.4 1.4.9q.6-.34 1.3-.55L7 1Z" fill="currentColor" opacity="0.9"/></svg>
+  </span>
+  <div id="popBody"></div>
+</div>
+
+<main id="main">
 
 <!-- ============================================================ HERO -->
-<section class="page page-hero" id="hero" aria-labelledby="hero-title">
-  <div class="hero-glow" aria-hidden="true"></div>
+<section class="page page-hero" id="hero" aria-labelledby="hero-heading">
+  <div class="desktop-wall" aria-hidden="true"></div>
+  <div class="hero-scrim" aria-hidden="true"></div>
+  <div class="hero-glow2" aria-hidden="true"></div>
   <div class="wrap">
     <div class="hero-head reveal">
       <div class="eyebrow">macOS menu bar utility</div>
-      <h1 id="hero-title">Back up.<br/>Walk away. <span class="muted">Safely.</span></h1>
+      <h1 id="hero-heading">Back up.<br/>Walk away. <span class="muted">Safely.</span></h1>
       <p class="hero-lead">TMEject ejects your Time Machine drive the instant a backup finishes — so it&rsquo;s always safe to pull the cable. And when you stand up to leave, one keystroke ejects the drive and locks your screen.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="downloads/TMEject-latest.dmg" id="download-hero">
+        <a class="btn btn-primary" href="downloads/TMEject-latest.dmg" download id="download-hero">
           <span class="dl-ico" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M9 2.5V11M9 11 5.5 7.5M9 11l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 13.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
           Download for Mac
         </a>
@@ -120,69 +81,23 @@
         <span>Time Machine drive required</span>
       </div>
     </div>
-
-    <!-- product shot -->
-    <div class="shot reveal" aria-hidden="true">
-      <div class="desk">
-        <div class="desk-bar">
-          <div class="l"><span class="b">Finder</span><span>File</span><span>Edit</span><span>View</span></div>
-          <div class="r">
-            <svg width="20" height="13" viewBox="0 0 26 14" fill="none" opacity="0.85"><rect x="1" y="3" width="20" height="8" rx="2.2" stroke="#fff" stroke-width="1.1" opacity="0.55"/><rect x="2.6" y="4.6" width="13" height="4.8" rx="1" fill="#fff"/><rect x="22.4" y="5.4" width="1.6" height="3.2" rx="0.8" fill="#fff" opacity="0.55"/></svg>
-            <svg width="15" height="13" viewBox="0 0 18 14" fill="none" opacity="0.85"><circle cx="9" cy="10.6" r="1.3" fill="#fff"/><path d="M5.2 7.4a5.4 5.4 0 0 1 7.6 0" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><path d="M3 5.1a8.6 8.6 0 0 1 12 0" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>
-            <span class="tme">
-              <svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="#fff"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="#fff"/></svg>
-            </span>
-            <span class="clock">Thu 2:14 PM</span>
-          </div>
-        </div>
-
-        <!-- popover B -->
-        <div class="pop">
-          <div class="pop-arrow"></div>
-          <span class="pop-gear">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 5.4A2.6 2.6 0 1 0 8 10.6 2.6 2.6 0 0 0 8 5.4Zm0 1.5a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z" fill="currentColor"/><path d="M7 1h2l.3 1.6a5.5 5.5 0 0 1 1.3.55l1.4-.9 1.4 1.4-.9 1.4q.34.6.55 1.3L14.6 7v2l-1.6.3a5.5 5.5 0 0 1-.55 1.3l.9 1.4-1.4 1.4-1.4-.9q-.6.34-1.3.55L9 14.6H7l-.3-1.6a5.5 5.5 0 0 1-1.3-.55l-1.4.9-1.4-1.4.9-1.4a5.5 5.5 0 0 1-.55-1.3L1.4 9V7l1.6-.3q.21-.7.55-1.3l-.9-1.4 1.4-1.4 1.4.9q.6-.34 1.3-.55L7 1Z" fill="currentColor" opacity="0.9"/></svg>
-          </span>
-          <div class="pop-hero">
-            <div class="hero-disc">
-              <div class="disc"></div>
-              <span class="g">
-                <svg width="28" height="28" viewBox="0 0 20 20" fill="none"><rect x="3" y="5.5" width="14" height="9" rx="2.2" stroke="currentColor" stroke-width="1.5"/><circle cx="13.5" cy="10" r="1.1" fill="currentColor"/><rect x="6" y="9.2" width="3.5" height="1.6" rx="0.8" fill="currentColor"/></svg>
-              </span>
-            </div>
-            <div class="name">Backup Drive</div>
-            <div class="sub">Connected &middot; backed up 2:14 PM</div>
-          </div>
-          <div class="pop-actions">
-            <button class="ritual-btn" type="button">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7.2" rx="2" fill="currentColor"/><path d="M5 7V5.2a3 3 0 0 1 6 0V7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
-              Eject &amp; Lock
-              <span class="keys"><kbd>&#8963;</kbd><kbd>&#8997;</kbd><kbd>&#8984;</kbd><kbd>E</kbd></span>
-            </button>
-            <div class="pop-row">
-              <span class="pop-quiet">Eject now</span>
-              <span class="pop-auto">Auto-eject <span class="switch"></span></span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </section>
 
 <!-- ============================================================ RITUAL -->
-<section class="page page-ritual ritual-sec" id="ritual" aria-labelledby="ritual-title">
+<section class="page ritual-sec" id="ritual" aria-labelledby="ritual-heading">
   <div class="glow" aria-hidden="true"></div>
   <div class="wrap">
     <div class="ritual-grid">
       <div class="ritual-copy reveal">
         <div class="eyebrow">The ritual</div>
-        <h2 id="ritual-title">One keystroke for leaving your desk.</h2>
+        <h2 id="ritual-heading">One keystroke for leaving your desk.</h2>
         <p>You&rsquo;re unplugging the Thunderbolt monitor your drive is daisy-chained to, and walking away. Press the shortcut: TMEject ejects the drive, confirms it&rsquo;s safe, then locks your screen — a single, deliberate motion you can trust.</p>
-        <div class="shortcut-display" aria-label="Keyboard shortcut: Control Option Command E">
-          <span class="big-key">&#8963;</span>
-          <span class="big-key">&#8997;</span>
-          <span class="big-key">&#8984;</span>
-          <span class="big-key lett">E</span>
+        <div class="shortcut-display" aria-label="Default shortcut: Control Option Command E">
+          <span class="big-key" aria-hidden="true">&#8963;</span>
+          <span class="big-key" aria-hidden="true">&#8997;</span>
+          <span class="big-key" aria-hidden="true">&#8984;</span>
+          <span class="big-key lett" aria-hidden="true">E</span>
         </div>
         <div class="shortcut-cap">Rebindable. Or click <span style="color:var(--ritual)">Eject &amp; Lock</span> in the menu bar.</div>
       </div>
@@ -201,11 +116,11 @@
 </section>
 
 <!-- ============================================================ FEATURES -->
-<section class="page page-features" id="features" aria-labelledby="features-title">
+<section class="page page-features" id="features" aria-labelledby="features-heading">
   <div class="wrap">
     <div class="feat-head reveal">
       <div class="eyebrow">What it does</div>
-      <h2 id="features-title">It does the right thing, then gets out of the way.</h2>
+      <h2 id="features-heading">It does the right thing, then gets out of the way.</h2>
       <p>No control panel. No dashboard. TMEject watches your backups and handles the drive — quietly, and correctly.</p>
     </div>
     <div class="feat-grid">
@@ -232,71 +147,70 @@
 </section>
 
 <!-- ============================================================ STATES -->
-<section class="page states-sec" id="states" aria-labelledby="states-title">
+<section class="page states-sec" id="states" aria-labelledby="states-heading">
   <div class="wrap">
-    <div class="states-head reveal">
-      <div class="eyebrow">The menu bar icon</div>
-      <h2 id="states-title">Five states. One glance.</h2>
-      <p>Every state reads from the icon itself — by shape and motion, not just color — so you always know where things stand.</p>
-    </div>
-    <div class="states-row">
-      <div class="state-item reveal">
-        <div class="state-icn" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></div>
-        <div><div class="state-name">Idle</div><div class="state-desc">Connected, nothing to do</div></div>
+    <div class="states-grid">
+      <div class="states-head reveal">
+        <div class="eyebrow">The menu bar icon</div>
+        <h2 id="states-heading">Five states.<br/>One glance.</h2>
+        <p>Watch the menu bar, top-right &mdash; the popover is live. Every state reads from the icon itself, by shape and motion, not colour alone.</p>
+        <div class="states-hint" id="statesHint">Now showing &mdash; <b>Idle</b></div>
       </div>
-      <div class="state-item reveal">
-        <div class="state-icn" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="rgba(127,127,127,0.3)" stroke-width="1.8"/><circle cx="12" cy="12" r="10" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="62.8" stroke-dashoffset="44" transform="rotate(-90 12 12)"/></svg>
-          <span style="position:absolute"><svg width="11" height="11" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+      <div class="states-row" id="statesList">
+        <div class="state-item" data-state="idle">
+          <div class="state-icn" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></div>
+          <div><div class="state-name">Idle</div><div class="state-desc">Connected, nothing to do</div></div>
         </div>
-        <div><div class="state-name">Backing up</div><div class="state-desc">Time Machine is writing</div></div>
-      </div>
-      <div class="state-item reveal">
-        <div class="state-icn" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="var(--green)" stroke-width="1.8"/></svg>
-          <span style="position:absolute;color:var(--green)"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.4 8.4 6.6 11.4 12.6 4.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <div class="state-item" data-state="backingUp">
+          <div class="state-icn" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="rgba(127,127,127,0.3)" stroke-width="1.8"/><circle cx="12" cy="12" r="10" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="62.8" stroke-dashoffset="44" transform="rotate(-90 12 12)"/></svg>
+            <span style="position:absolute"><svg width="11" height="11" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+          </div>
+          <div><div class="state-name">Backing up</div><div class="state-desc">Time Machine is writing</div></div>
         </div>
-        <div><div class="state-name">Confirming</div><div class="state-desc">Verifying success</div></div>
-      </div>
-      <div class="state-item reveal">
-        <div class="state-icn" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="rgba(127,127,127,0.3)" stroke-width="1.8"/><circle cx="12" cy="12" r="10" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="62.8" stroke-dashoffset="22" transform="rotate(-90 12 12)"/></svg>
-          <span style="position:absolute"><svg width="10" height="10" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+        <div class="state-item" data-state="confirming">
+          <div class="state-icn" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="var(--green)" stroke-width="1.8"/></svg>
+            <span style="position:absolute;color:var(--green)"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.4 8.4 6.6 11.4 12.6 4.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div><div class="state-name">Confirming</div><div class="state-desc">Verifying success before eject</div></div>
         </div>
-        <div><div class="state-name">Ejecting</div><div class="state-desc">Safely, with retries</div></div>
-      </div>
-      <div class="state-item reveal">
-        <div class="state-icn" aria-hidden="true">
-          <span style="opacity:0.5"><svg width="22" height="22" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
-          <span style="position:absolute;right:2px;bottom:4px;color:var(--orange)"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 1.6 15 13.6H1L8 1.6Z" fill="currentColor"/><rect x="7.2" y="5.6" width="1.6" height="4" rx="0.8" fill="#1a1a1a"/><circle cx="8" cy="11.4" r="0.95" fill="#1a1a1a"/></svg></span>
+        <div class="state-item" data-state="ejecting">
+          <div class="state-icn" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="rgba(127,127,127,0.3)" stroke-width="1.8"/><circle cx="12" cy="12" r="10" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="62.8" stroke-dashoffset="22" transform="rotate(-90 12 12)"/></svg>
+            <span style="position:absolute"><svg width="10" height="10" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+          </div>
+          <div><div class="state-name">Ejecting</div><div class="state-desc">Safely, with retries</div></div>
         </div>
-        <div><div class="state-name">Eject failed</div><div class="state-desc">Here&rsquo;s why &mdash; and retry</div></div>
+        <div class="state-item" data-state="failed">
+          <div class="state-icn" aria-hidden="true">
+            <span style="opacity:0.5"><svg width="22" height="22" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+            <span style="position:absolute;right:2px;bottom:4px;color:var(--orange)"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 1.6 15 13.6H1L8 1.6Z" fill="currentColor"/><rect x="7.2" y="5.6" width="1.6" height="4" rx="0.8" fill="#1a1a1a"/><circle cx="8" cy="11.4" r="0.95" fill="#1a1a1a"/></svg></span>
+          </div>
+          <div><div class="state-name">Eject failed</div><div class="state-desc">Here&rsquo;s why &mdash; and retry</div></div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================ DOWNLOAD + FOOTER -->
-<section class="page page-download cta" id="download" aria-labelledby="download-title">
+<section class="page page-download" id="download" aria-labelledby="download-heading">
   <div class="glow" aria-hidden="true"></div>
   <div class="wrap cta-inner">
     <div class="reveal">
-      <h2 id="download-title">Pull the cable with confidence.</h2>
-      <p>Lives in your menu bar. Gone from your mind.</p>
+      <h2 id="download-heading">Pull the cable with confidence.</h2>
+      <p>Free. Lives in your menu bar. Gone from your mind.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="downloads/TMEject-latest.dmg" id="download-main">
+        <a class="btn btn-primary" href="downloads/TMEject-latest.dmg" download id="download-main">
           <span class="dl-ico" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M9 2.5V11M9 11 5.5 7.5M9 11l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 13.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
-          Download TMEject
+          Download for Mac
         </a>
       </div>
       <div class="cta-reqs">
         <span>macOS 14+ (Sonoma, Sequoia, Tahoe)</span><span class="dot"></span>
         <span>Universal binary</span><span class="dot"></span>
-        <span>Notarized by Apple</span><span class="dot"></span>
         <span>Time Machine drive required</span>
-      </div>
-      <div class="cta-sub">
-        Auto-updates via <a href="appcast.xml">Sparkle</a> · Source on <a href="https://github.com/D4G4/TMEject">GitHub</a>
       </div>
     </div>
   </div>
@@ -310,8 +224,7 @@
         <a href="#ritual">The ritual</a>
         <a href="#features">Features</a>
         <a href="#download">Download</a>
-        <a href="https://github.com/D4G4/TMEject">GitHub</a>
-        <a href="https://github.com/D4G4/TMEject/releases">Release notes</a>
+        <a href="https://github.com/D4G4/TMEject" rel="noopener">GitHub</a>
       </div>
       <div class="foot-copy">&copy; <span id="year">2026</span> TMEject</div>
     </div>
@@ -321,32 +234,192 @@
 </main>
 
 <script>
-  const nav = document.getElementById('nav');
+  /* ===== LIVE MENU BAR CLOCK ===== */
+  (function liveClock(){
+    const el = document.getElementById('macbarClock');
+    if (!el) return;
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    function tick(){
+      const d = new Date();
+      const h12 = ((d.getHours() + 11) % 12) + 1;
+      const m = d.getMinutes().toString().padStart(2, '0');
+      const ampm = d.getHours() < 12 ? 'AM' : 'PM';
+      el.textContent = days[d.getDay()] + ' ' + h12 + ':' + m + ' ' + ampm;
+    }
+    tick();
+    setInterval(tick, 15000);
+  })();
+
+  const macbar = document.getElementById('macbar');
   const dots = [...document.querySelectorAll('.pagedots a')];
+  const litItems = [...document.querySelectorAll('.macbar .app, .macbar .menu')];
   const pages = [...document.querySelectorAll('.page')];
 
-  // active page → dot highlight + nav background (solid past the hero)
-  const pageIO = new IntersectionObserver((entries) => {
-    entries.forEach(e => {
-      if (e.isIntersecting) {
-        const id = e.target.id;
-        dots.forEach(d => d.classList.toggle('active', d.getAttribute('href') === '#' + id));
-        nav.classList.toggle('scrolled', id !== 'hero');
-      }
-    });
-  }, { threshold: 0.55 });
-  pages.forEach(p => pageIO.observe(p));
+  /* ===== LIVE POPOVER STATE MACHINE ===== */
+  const livePop = document.getElementById('livePop');
+  const popBody = document.getElementById('popBody');
+  const barIcon = document.getElementById('tmeIcon');
+  const statesList = document.getElementById('statesList');
+  const statesHint = document.getElementById('statesHint');
+  const isWide = () => window.innerWidth > 880;
+  const RC = 2 * Math.PI * 34.5; // 72px disc, stroke 3
+  const NAMES = { idle:'Idle', backingUp:'Backing up', confirming:'Confirming', ejecting:'Ejecting', failed:'Eject failed' };
+  const G = {
+    drive: s => `<svg width="${s}" height="${s}" viewBox="0 0 20 20" fill="none"><rect x="3" y="5.5" width="14" height="9" rx="2.2" stroke="currentColor" stroke-width="1.5"/><circle cx="13.5" cy="10" r="1.1" fill="currentColor"/><rect x="6" y="9.2" width="3.5" height="1.6" rx="0.8" fill="currentColor"/></svg>`,
+    eject: s => `<svg width="${s}" height="${s}" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg>`,
+    check: s => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none"><path d="M3.4 8.4 6.6 11.4 12.6 4.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    bang: s => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none"><path d="M8 1.6 15 13.6H1L8 1.6Z" fill="currentColor"/><rect x="7.2" y="5.6" width="1.6" height="4" rx="0.8" fill="#1a1a1a"/><circle cx="8" cy="11.4" r="0.95" fill="#1a1a1a"/></svg>`,
+  };
+  function discRing(color, pct){
+    if (pct === null) return '';
+    const indet = pct === 'indet';
+    const off = indet ? RC * 0.72 : RC * (1 - pct / 100);
+    return `<svg class="${indet ? 'ring-spin' : ''}" width="72" height="72" viewBox="0 0 72 72" fill="none" style="position:absolute;inset:0"><circle cx="36" cy="36" r="34.5" stroke="rgba(127,127,127,0.22)" stroke-width="3"/><circle class="ring-prog" cx="36" cy="36" r="34.5" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${RC}" stroke-dashoffset="${off}" transform="rotate(-90 36 36)"/></svg>`;
+  }
+  const RITUAL = `<button class="ritual-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7.2" rx="2" fill="currentColor"/><path d="M5 7V5.2a3 3 0 0 1 6 0V7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg> Eject &amp; Lock <span class="keys"><kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>E</kbd></span></button>`;
+  function popHTML(state, d){
+    d = d || {}; const pct = d.pct || 0, attempt = d.attempt || 1;
+    let disc = G.drive(28), glyphColor = 'rgba(255,255,255,0.6)', ring = '', sub = '', body = '', discStyle = '';
+    if (state === 'idle'){
+      sub = 'Connected &middot; backed up 2:14 PM';
+      body = `<div class="pop-actions">${RITUAL}<div class="pop-row"><span class="pop-quiet">Eject now</span><span class="pop-auto">Auto-eject <span class="switch"></span></span></div></div>`;
+    } else if (state === 'backingUp'){
+      ring = discRing('var(--blue)', pct); glyphColor = 'rgba(255,255,255,0.85)'; disc = G.eject(22);
+      sub = `Backing up &middot; <b class="pct">${Math.round(pct)}%</b>`;
+      body = `<div class="pop-prog"><div class="pop-bar"><i style="width:${pct}%"></i></div></div><div class="pop-note">TMEject will eject automatically when the backup finishes.</div>`;
+    } else if (state === 'confirming'){
+      ring = discRing('var(--green)', 100); glyphColor = 'var(--green)'; disc = G.check(26);
+      sub = 'Backup complete — verifying';
+      body = `<div class="pop-prog"><div class="pop-bar indet"><i></i></div></div><div class="pop-note">Confirming the backup succeeded before ejecting.</div>`;
+    } else if (state === 'ejecting'){
+      ring = discRing('var(--blue)', pct); glyphColor = 'rgba(255,255,255,0.85)'; disc = G.eject(22);
+      sub = `Ejecting safely &middot; <b class="att">attempt ${attempt}</b>`;
+      body = `<div class="pop-prog"><div class="pop-bar"><i style="width:${pct}%"></i></div></div><div class="pop-note">Spotlight is indexing the drive — this can take a moment. You can keep working.</div>`;
+    } else { // failed
+      glyphColor = 'var(--orange)'; disc = G.bang(24);
+      discStyle = 'background: color-mix(in srgb, var(--orange) 14%, transparent); border-color: color-mix(in srgb, var(--orange) 32%, transparent);';
+      sub = 'Couldn’t eject — drive still in use';
+      body = `<div class="pop-why">held by <span class="pid">mds_stores (pid 412)</span></div><div class="twin"><button class="b1">Try again</button><button class="b2">Force eject</button></div>`;
+    }
+    return `<div class="pop-hero"><div class="hero-disc"><div class="disc" style="${discStyle}"></div>${ring}<span class="g" style="color:${glyphColor}">${disc}</span></div><div class="name">Backup Drive</div><div class="sub">${sub}</div></div>${body}`;
+  }
+  function barRing(color, pct){
+    const r = 8, c = 2 * Math.PI * r, indet = pct === 'indet';
+    const off = indet ? c * 0.72 : c * (1 - pct / 100);
+    return `<svg class="${indet ? 'ring-spin' : ''}" width="18" height="18" viewBox="0 0 18 18" fill="none" style="position:absolute;inset:0"><circle cx="9" cy="9" r="8" stroke="rgba(255,255,255,0.32)" stroke-width="1.6"/><circle cx="9" cy="9" r="8" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 9 9)"/></svg>`;
+  }
+  function setBarIcon(state, d){
+    d = d || {}; const pct = d.pct || 0; let html;
+    const wrap = inner => `<span style="position:relative;width:18px;height:18px;display:grid;place-items:center">${inner}</span>`;
+    if (state === 'backingUp') html = wrap(barRing('#fff', pct) + `<span style="position:absolute">${G.eject(9)}</span>`);
+    else if (state === 'confirming') html = wrap(barRing('#fff', 100) + `<span style="position:absolute">${G.check(9)}</span>`);
+    else if (state === 'ejecting') html = wrap(barRing('#fff', pct) + `<span style="position:absolute">${G.eject(9)}</span>`);
+    else if (state === 'failed') html = wrap(`<span style="opacity:0.55">${G.eject(15)}</span><span style="position:absolute;right:-3px;bottom:-2px;color:var(--orange)">${G.bang(10)}</span>`);
+    else html = G.eject(16);
+    if (barIcon) barIcon.innerHTML = html;
+  }
+  function highlight(state){
+    if (statesList) [...statesList.querySelectorAll('.state-item')].forEach(it => it.classList.toggle('lit', it.dataset.state === state));
+    if (statesHint) statesHint.innerHTML = 'Now showing &mdash; <b>' + NAMES[state] + '</b>';
+  }
+  function setState(state, d){ popBody.innerHTML = popHTML(state, d); setBarIcon(state, d); highlight(state); }
+  function updateProgress(state, pct, attempt){
+    const rp = popBody.querySelector('.ring-prog'); if (rp) rp.setAttribute('stroke-dashoffset', RC * (1 - pct / 100));
+    const bar = popBody.querySelector('.pop-bar > i'); if (bar) bar.style.width = pct + '%';
+    const pctEl = popBody.querySelector('.pct'); if (pctEl) pctEl.textContent = Math.round(pct) + '%';
+    const attEl = popBody.querySelector('.att'); if (attEl) attEl.textContent = 'attempt ' + attempt;
+    setBarIcon(state, { pct, attempt });
+  }
+  const seq = [
+    { s:'idle', hold:1500 }, { s:'backingUp', dur:2600 }, { s:'confirming', hold:1400 },
+    { s:'ejecting', dur:2900 }, { s:'failed', hold:2700 },
+  ];
+  let playing = false, toId = null, intId = null, idx = 0;
+  function clearTimers(){ if (toId){ clearTimeout(toId); toId = null; } if (intId){ clearInterval(intId); intId = null; } }
+  function stepSeq(){
+    if (!playing) return;
+    const item = seq[idx];
+    setState(item.s, { pct:0, attempt:1 });
+    if (item.dur){
+      const start = Date.now();
+      intId = setInterval(() => {
+        if (!playing){ clearInterval(intId); intId = null; return; }
+        const pct = Math.min(100, (Date.now() - start) / item.dur * 100);
+        const attempt = item.s === 'ejecting' ? (pct > 75 ? 3 : pct > 40 ? 2 : 1) : 1;
+        updateProgress(item.s, pct, attempt);
+        if (pct >= 100){ clearInterval(intId); intId = null; toId = setTimeout(nextSeq, 360); }
+      }, 16);
+    } else toId = setTimeout(nextSeq, item.hold);
+  }
+  function nextSeq(){ if (!playing) return; idx = (idx + 1) % seq.length; stepSeq(); }
+  function startPlay(){ if (playing) return; playing = true; idx = 0; stepSeq(); }
+  function stopPlay(){ playing = false; clearTimers(); setState('idle', {}); }
+  setState('idle', {}); // initial
 
-  // reveal content as each page comes in
-  const revealIO = new IntersectionObserver((entries) => {
-    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); revealIO.unobserve(e.target); } });
-  }, { rootMargin: '0px 0px -6% 0px', threshold: 0.08 });
+  // ---- scroll-driven active section (robust; no IntersectionObserver) ----
   document.querySelectorAll('.reveal').forEach((el, i) => {
     el.style.transitionDelay = (Math.min(i % 3, 2) * 80) + 'ms';
-    revealIO.observe(el);
+    // hide only elements that start below the fold, so they can animate in
+    if (el.getBoundingClientRect().top >= window.innerHeight * 0.9) el.classList.add('pre');
   });
+  function updateReveal(){
+    const h = window.innerHeight;
+    document.querySelectorAll('.reveal.pre').forEach(el => {
+      if (el.getBoundingClientRect().top < h * 0.9) el.classList.remove('pre');
+    });
+  }
+  function activeSection(){
+    const vc = window.innerHeight / 2;
+    let best = null, bestDist = Infinity;
+    pages.forEach(p => {
+      const r = p.getBoundingClientRect();
+      const d = Math.abs((r.top + r.height / 2) - vc);
+      if (d < bestDist) { bestDist = d; best = p; }
+    });
+    return best;
+  }
+  let lastId = null;
+  function onScroll(){
+    updateReveal();
+    const sec = activeSection(); if (!sec) return;
+    const id = sec.id;
+    dots.forEach(d => d.classList.toggle('active', d.getAttribute('href') === '#' + id));
+    macbar.classList.toggle('solid', id !== 'hero');
+    litItems.forEach(m => m.classList.toggle('lit', m.getAttribute('href') === '#' + id));
+    if (id !== lastId) {
+      lastId = id;
+      const showPop = (id === 'hero' || id === 'states') && isWide();
+      livePop.classList.toggle('pop--hidden', !showPop);
+      if (id === 'states' && isWide()) startPlay(); else stopPlay();
+    }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  document.addEventListener('scroll', onScroll, { passive: true, capture: true });
+  window.addEventListener('resize', onScroll);
+  requestAnimationFrame(() => { updateReveal(); onScroll(); });
+  setTimeout(() => { updateReveal(); onScroll(); }, 60);
+  setTimeout(() => { updateReveal(); onScroll(); }, 300);
 
   document.getElementById('year').textContent = new Date().getFullYear();
+
+  // align the open popover's arrow with the TMEject icon in the menu bar
+  function positionPopover() {
+    const icon = document.getElementById('tmeIcon');
+    const pop = document.getElementById('livePop');
+    const arrow = pop && pop.querySelector('.pop-arrow');
+    if (!icon || !pop || !arrow) return;
+    if (window.innerWidth <= 880) { pop.style.right = ''; arrow.style.right = ''; return; }
+    const ic = icon.getBoundingClientRect();
+    const iconCenter = ic.left + ic.width / 2;
+    const popRight = 30;
+    pop.style.right = popRight + 'px';
+    const arrowRight = (window.innerWidth - popRight) - iconCenter - 8;
+    arrow.style.right = Math.max(16, arrowRight) + 'px';
+  }
+  positionPopover();
+  window.addEventListener('load', positionPopover);
+  window.addEventListener('resize', positionPopover);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(positionPopover);
 </script>
 </body>
 </html>
