@@ -5,6 +5,9 @@ import KeyboardShortcuts
 struct MenuBarPopoverView: View {
     @ObservedObject var coordinator: AppCoordinator
     @State private var whyExpanded = false
+    /// Source of truth for the auto-eject toggle in the popover. `.onChange` below routes
+    /// flips through the coordinator so FDA probing + rate-limited notifications still fire.
+    @AppStorage(SettingsKey.autoEjectEnabled) private var autoEjectEnabled = true
 
     var body: some View {
         ZStack {
@@ -22,6 +25,9 @@ struct MenuBarPopoverView: View {
             coordinator.refreshLoginItemStatus()
             coordinator.refreshFDAState()
             coordinator.refreshDrivePresence()
+        }
+        .onChange(of: autoEjectEnabled) { _, newValue in
+            coordinator.respondToAutoEjectChange(newValue)
         }
     }
 
@@ -264,14 +270,11 @@ struct MenuBarPopoverView: View {
             Text("Auto-eject")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
-            Toggle("", isOn: Binding(
-                get: { UserDefaults.standard.bool(forKey: SettingsKey.autoEjectEnabled) },
-                set: { coordinator.setAutoEjectEnabled($0) }
-            ))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .scaleEffect(0.92)
+            Toggle("", isOn: $autoEjectEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .scaleEffect(0.92)
         }
     }
 
@@ -316,8 +319,7 @@ struct MenuBarPopoverView: View {
 
     @ViewBuilder
     private var fdaPill: some View {
-        let needsFDA = UserDefaults.standard.bool(forKey: SettingsKey.autoEjectEnabled)
-                     && coordinator.fdaState != .granted
+        let needsFDA = autoEjectEnabled && coordinator.fdaState != .granted
         if needsFDA {
             Button {
                 UIActionLogger.buttonTapped("Open Full Disk Access", context: "popover-pill")

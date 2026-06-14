@@ -77,8 +77,10 @@ final class AppCoordinator: ObservableObject {
     // Toast suppression default — Step 10's Advanced tab UI flips this.
     private static let toastsEnabledKey = "co.dls.tmeject.toastsEnabled"
 
-    // M3: UserDefaults key for the snapshot path captured at confirming-entry.
-    private static let preConfirmPathKey = "co.dls.tmeject.preConfirmLatestBackupPath"
+    // M3 (Step 12.7+13 renamed): UserDefaults key for the snapshot path captured at
+    // backupBegan. Was preConfirmLatestBackupPath when the capture point was confirming-entry;
+    // the Tahoe snapshot-delta race fix moves capture to backupBegan and renames accordingly.
+    private static let preBackupPathKey = "co.dls.tmeject.preBackupLatestBackupPath"
 
     init(
         tmutil: TMUtilClient = LiveTMUtilClient(),
@@ -180,6 +182,16 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func maybeSendFDANotification() {
+        // Gate on onboarding completion (Step 12.7 High #4): on a fresh install, init seeds
+        // autoEjectEnabled=true and start()'s force-probe puts us in the denied branch before
+        // the AppDelegate has shown the launch HUD. Firing the system notification at that
+        // moment surfaces it ON TOP of the HUD — confusing first-run UX. The FDA pill in
+        // popover / Settings / Onboarding still surfaces the state; we just defer the
+        // notification until the user finishes the initial flow.
+        guard defaults.bool(forKey: SettingsKey.hasCompletedOnboarding) else {
+            TMEjectLog.app.debug("Skipping FDA notification — onboarding not complete")
+            return
+        }
         let now = clock.now()
         if (now - lastFDANotificationAt) < Self.fdaNotificationRateLimitSeconds { return }
         lastFDANotificationAt = now
@@ -190,6 +202,44 @@ final class AppCoordinator: ObservableObject {
                 category: .generic
             )
         }
+    }
+
+    /// Returns a human-readable explanation of why the cooldown blocks auto-eject right now,
+    /// or `nil` if it doesn't (cooldown=0, can't derive next-backup time, or window cleared).
+    ///
+    /// Inputs:
+    /// - `SettingsKey.cooldownMinutes` — user-configured cooldown window in minutes
+    /// - `lastBackupCompletedAt` — best-effort "previous backup ended at" timestamp
+    ///
+    /// Tahoe's hourly TM schedule means the NEXT backup fires ~60 min after the last one.
+    /// If the cooldown window covers that next backup, eject would just force a reconnect.
+    /// When we can't derive a baseline (first run, nil lastBackupCompletedAt), we DON'T
+    /// block — the user explicitly opted in to auto-eject and missing data should fail open.
+    func cooldownBlocksEject() -> String? {
+        let cooldown = defaults.integer(forKey: SettingsKey.cooldownMinutes)
+        guard cooldown > 0 else { return nil }
+        guard let last = lastBackupCompletedAt else { return nil }
+        let elapsed = Date().timeIntervalSince(last) / 60.0
+        // Tahoe's stock TM schedule is hourly. Approximate "next backup time" as
+        // last + 60min; if cooldown straddles that, the eject would just force a manual
+        // reconnect before the next backup. Skip with a friendly toast.
+        let nextBackupInMin = max(0, 60.0 - elapsed)
+        if nextBackupInMin < Double(cooldown) {
+            return "~\(Int(nextBackupInMin.rounded()))m"
+        }
+        return nil
+    }
+
+    /// Called from the Popover's @AppStorage `.onChange` so a toggle flip in the popover
+    /// still drives the coordinator's side-effects (FDA probe + rate-limited notification).
+    /// The popover's `@AppStorage` is the source of truth for the bool itself.
+    func respondToAutoEjectChange(_ enabled: Bool) {
+        UIActionLogger.settingChanged("autoEjectEnabled", value: "\(enabled)")
+        if enabled {
+            Task { _ = await self.requestNotificationAuthIfNeeded() }
+            refreshFDAState(force: true)
+        }
+        evaluateAutoEjectGate(reason: "popoverToggle=\(enabled)")
     }
 
     /// Polled at popover/window appearances. Cheap (single SMAppService.status read).
@@ -332,27 +382,37 @@ final class AppCoordinator: ObservableObject {
     // MARK: - M3 relaunch restore
 
     private func restoreFromRelaunchIfNeeded() async {
-        guard let savedPath = defaults.string(forKey: Self.preConfirmPathKey) else { return }
+        guard let savedPath = defaults.string(forKey: Self.preBackupPathKey) else { return }
         let status: StatusPlist
         do {
             status = try await tmutil.status()
         } catch {
-            TMEjectLog.app.error("Could not poll tmutil at restore: \(error) — clearing stale preConfirm path")
-            defaults.removeObject(forKey: Self.preConfirmPathKey)
+            TMEjectLog.app.error("Could not poll tmutil at restore: \(error) — clearing stale preBackup path")
+            defaults.removeObject(forKey: Self.preBackupPathKey)
             return
         }
         let phase = BackupPhaseKind.classify(status.backupPhase)
-        if status.running, phase.isConfirming {
-            let restoredURL = URL(fileURLWithPath: savedPath)
-            machine.restoreConfirmingFromRelaunch(latestBackupPath: restoredURL, entryProbeFailed: false)
-            state = machine.state
-            TMEjectLog.app.info("Restored confirming state from previous run; baseline=\(savedPath)")
-            // Activate the confirming-cap timer immediately. The polling observer will see
-            // phase-still-confirming and won't re-emit confirmingEntered (state == .confirming
-            // → that event is ignored by the guard table).
+        guard status.running else {
+            // Backup ended while we were down; nothing useful to restore. The next idle poll
+            // will emit nothing, and the next backupBegan will capture a fresh baseline.
+            defaults.removeObject(forKey: Self.preBackupPathKey)
+            return
+        }
+        let restoredURL = URL(fileURLWithPath: savedPath)
+        // Restore the matching state. Confirming → .confirming + start cap timer. Anything
+        // else (copying, preCopy) → .backingUp + start stall timer.
+        let target: AppState = phase.isConfirming ? .confirming : .backingUp
+        machine.restoreInFlightFromRelaunch(
+            intoState: target,
+            baselineLatestBackupPath: restoredURL,
+            baselineProbeFailed: false
+        )
+        state = machine.state
+        TMEjectLog.app.info("Restored \(target) state from previous run; baseline=\(savedPath)")
+        if target == .confirming {
             await observer?.setConfirmingTracking(active: true)
         } else {
-            defaults.removeObject(forKey: Self.preConfirmPathKey)
+            await observer?.setStallTracking(active: true)
         }
     }
 
@@ -413,25 +473,53 @@ final class AppCoordinator: ObservableObject {
         switch command {
         case .requestPoll:
             await observer?.pokeNow()
-        case .recordPreConfirmLatestBackup(let path):
+        case .recordPreBackupLatestBackup(let path):
             if let path {
-                defaults.set(path.path, forKey: Self.preConfirmPathKey)
+                defaults.set(path.path, forKey: Self.preBackupPathKey)
             } else {
                 // Persist a sentinel so a relaunch can still see "we entered confirming with
                 // no snapshot baseline" vs "no confirming state at all". We use an empty
                 // string for that. The restore code path treats an empty string the same as
                 // a missing key (no restore) — current behaviour is conservative; revisit if
                 // a real distinction is needed.
-                defaults.removeObject(forKey: Self.preConfirmPathKey)
+                defaults.removeObject(forKey: Self.preBackupPathKey)
             }
-        case .clearPreConfirmLatestBackup:
-            defaults.removeObject(forKey: Self.preConfirmPathKey)
+        case .clearPreBackupLatestBackup:
+            defaults.removeObject(forKey: Self.preBackupPathKey)
         case .beginEject(let lock):
             await runEject(lock: lock)
         case .signalBackupCompleted:
-            // Step 6 stub: auto-eject is OFF by default (decision #7). Real cooldown + setting
-            // plumbing lands in Step 10/11; for now we just log.
-            TMEjectLog.eject.info("signalBackupCompleted received — auto-eject OFF until Step 10/11")
+            // Track when the backup completed for the cooldown calc below.
+            lastBackupCompletedAt = Date()
+            let autoEjectOn = defaults.bool(forKey: SettingsKey.autoEjectEnabled)
+            if !autoEjectOn {
+                TMEjectLog.eject.info("signalBackupCompleted — auto-eject is OFF, leaving drive mounted")
+                break
+            }
+            if !isAutoEjectFunctional {
+                // FDA pill / notification already surfaces this; just log and bail.
+                TMEjectLog.eject.info("signalBackupCompleted — auto-eject ON but blocked (fdaState=\(fdaState))")
+                break
+            }
+            if let cooldown = cooldownBlocksEject() {
+                TMEjectLog.eject.info("signalBackupCompleted — cooldown blocks eject (\(cooldown))")
+                lastToast = ToastMessage(
+                    level: .info,
+                    text: "Backup complete",
+                    subtitle: "Skipping eject — next backup due in \(cooldown)",
+                    kind: .ok
+                )
+                if toastsEnabled {
+                    toastPresenter?.present(level: .info,
+                                            message: "Backup complete",
+                                            subtitle: "Skipping eject — next backup due in \(cooldown)",
+                                            kind: .ok,
+                                            actionLabel: nil)
+                }
+                break
+            }
+            TMEjectLog.eject.info("signalBackupCompleted — firing auto-eject")
+            await deliver(.ejectRequested(lock: false, source: .auto))
         case .showToast(let level, let message):
             let enriched = enrichToast(level: level, message: message)
             lastToast = enriched

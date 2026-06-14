@@ -99,7 +99,7 @@ final class EjectAndLockTests: XCTestCase {
         let coord = makeCoordinator(tmutil: tmutil, confirm: confirm,
                                     locker: locker, clock: FakeClock(),
                                     unmount: unmount)
-        await coord.deliverForTesting(.backupBegan)
+        await coord.deliverForTesting(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))
         XCTAssertEqual(coord.state, .backingUp)
         coord.requestEjectAndLock()
         try? await Task.sleep(nanoseconds: 30_000_000)
@@ -129,7 +129,7 @@ final class EjectAndLockTests: XCTestCase {
         let coord = makeCoordinator(tmutil: tmutil, confirm: confirm,
                                     locker: locker, clock: clock,
                                     unmount: unmount)
-        await coord.deliverForTesting(.backupBegan)
+        await coord.deliverForTesting(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))
         // FakeClock.sleep is near-instant (1ms) so waitForBackupToStop loops quickly.
         coord.requestEjectAndLock()
         try? await Task.sleep(nanoseconds: 200_000_000)
@@ -152,7 +152,7 @@ final class EjectAndLockTests: XCTestCase {
         let coord = makeCoordinator(tmutil: tmutil, confirm: confirm,
                                     locker: locker, clock: FakeClock(),
                                     unmount: unmount)
-        await coord.deliverForTesting(.backupBegan)
+        await coord.deliverForTesting(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))
         coord.requestEjectAndLock()
         try? await Task.sleep(nanoseconds: 100_000_000)
         let locks = await locker.lockCount
@@ -197,7 +197,7 @@ final class EjectAndLockTests: XCTestCase {
                                     locker: FakeScreenLocker(), clock: FakeClock(),
                                     unmount: unmount)
         XCTAssertTrue(coord.isEjectAndLockAllowed)              // .idle
-        await coord.deliverForTesting(.backupBegan)
+        await coord.deliverForTesting(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))
         XCTAssertTrue(coord.isEjectAndLockAllowed)              // .backingUp — enabled (with prompt)
         await coord.deliverForTesting(.confirmingEntered(latestBackupPath: nil, entryProbeFailed: false))
         XCTAssertTrue(coord.isEjectAndLockAllowed)              // .confirming — enabled (with prompt)

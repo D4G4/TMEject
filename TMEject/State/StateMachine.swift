@@ -2,20 +2,28 @@ import Foundation
 
 struct StateMachine: Sendable {
     private(set) var state: AppState
-    private(set) var preConfirmLatestBackup: URL?
-    /// True when the snapshot probe at confirming-entry (or restore-from-relaunch with no path)
-    /// failed — we have no reliable baseline so the exit must NOT claim success even if the new
-    /// probe returns a non-nil path. Closes the H2 false-success race.
-    private(set) var preConfirmProbeFailed: Bool
+
+    /// Snapshot path captured at backupBegan — the BASELINE we compare against at
+    /// confirmingExited to detect success. Step 12.7+13 fixup: was captured at
+    /// confirmingEntered, but on macOS 26.3.1 the new snapshot URL is committed BEFORE
+    /// TMEject's first confirming-phase poll. Moving the capture to backupBegan ensures
+    /// the baseline is the PRIOR snapshot.
+    private(set) var preBackupLatestBackup: URL?
+
+    /// OR-accumulated probe-failure flag — set if EITHER the baseline probe at backupBegan
+    /// OR the entry probe at confirmingEntered failed. A probe failure means FDA was denied
+    /// during that poll; we can't trust either side of the snapshot-delta comparison, so the
+    /// state machine refuses to claim success on exit. Closes the H2 false-success race.
+    private(set) var preBackupProbeFailed: Bool
 
     init(
         state: AppState = .idle,
-        preConfirmLatestBackup: URL? = nil,
-        preConfirmProbeFailed: Bool = false
+        preBackupLatestBackup: URL? = nil,
+        preBackupProbeFailed: Bool = false
     ) {
         self.state = state
-        self.preConfirmLatestBackup = preConfirmLatestBackup
-        self.preConfirmProbeFailed = preConfirmProbeFailed
+        self.preBackupLatestBackup = preBackupLatestBackup
+        self.preBackupProbeFailed = preBackupProbeFailed
     }
 
     /// Locked Architecture Decision #10: "Eject now" / "Eject & Lock" are disabled in
@@ -29,14 +37,21 @@ struct StateMachine: Sendable {
 
     static func isAutoEjectToggleAllowed(in _: AppState) -> Bool { true }
 
-    /// Restore a confirming-phase position discovered at coordinator launch.
-    /// Used by M3 to recover from a TMEject relaunch that happened mid-confirming so the
-    /// snapshot-advance comparison still has a baseline.
-    mutating func restoreConfirmingFromRelaunch(latestBackupPath: URL?, entryProbeFailed: Bool) {
+    /// Restore a backup-in-progress position discovered at coordinator launch. Used by M3
+    /// to recover from a TMEject relaunch that happened while backupd was running so the
+    /// snapshot-advance comparison still has a baseline. The caller (coordinator) is
+    /// responsible for figuring out whether to restore to .backingUp or .confirming based
+    /// on the current `tmutil status` phase.
+    mutating func restoreInFlightFromRelaunch(
+        intoState restoredState: AppState,
+        baselineLatestBackupPath: URL?,
+        baselineProbeFailed: Bool
+    ) {
         guard state == .idle else { return }
-        state = .confirming
-        preConfirmLatestBackup = latestBackupPath
-        preConfirmProbeFailed = entryProbeFailed
+        guard restoredState == .backingUp || restoredState == .confirming else { return }
+        state = restoredState
+        preBackupLatestBackup = baselineLatestBackupPath
+        preBackupProbeFailed = baselineProbeFailed
     }
 
     mutating func handle(_ event: AppEvent) -> GuardOutcome {
@@ -52,10 +67,13 @@ struct StateMachine: Sendable {
             return .ignored(reason: "wakeSignal ignored in \(state) — already supervising")
 
         // MARK: backupBegan
-        case (.idle, .backupBegan),
-             (.idleEjectFailed, .backupBegan):
+        case (.idle, .backupBegan(let baseline, let baselineFailed)),
+             (.idleEjectFailed, .backupBegan(let baseline, let baselineFailed)):
+            preBackupLatestBackup = baseline
+            preBackupProbeFailed = baselineFailed
             state = .backingUp
             return .accepted([
+                .recordPreBackupLatestBackup(baseline),
                 .setLastError(nil),
                 .startStallTimer,
                 .showToast(level: .info, message: "Backup started")
@@ -66,14 +84,15 @@ struct StateMachine: Sendable {
             return .ignored(reason: "backupBegan ignored in \(state)")
 
         // MARK: confirmingEntered
-        case (.idle, .confirmingEntered(let path, let probeFailed)),
-             (.idleEjectFailed, .confirmingEntered(let path, let probeFailed)),
-             (.backingUp, .confirmingEntered(let path, let probeFailed)):
-            preConfirmLatestBackup = path
-            preConfirmProbeFailed = probeFailed
+        // No longer overwrites preBackupLatestBackup — that was captured at backupBegan.
+        // We DO OR in entryProbeFailed so a mid-backup FDA grant revocation still blocks
+        // success claims at exit.
+        case (.idle, .confirmingEntered(_, let probeFailed)),
+             (.idleEjectFailed, .confirmingEntered(_, let probeFailed)),
+             (.backingUp, .confirmingEntered(_, let probeFailed)):
+            if probeFailed { preBackupProbeFailed = true }
             state = .confirming
             return .accepted([
-                .recordPreConfirmLatestBackup(path),
                 .stopStallTimer,
                 .startConfirmingTimer
             ])
@@ -81,31 +100,31 @@ struct StateMachine: Sendable {
              (.ejecting, .confirmingEntered):
             return .ignored(reason: "confirmingEntered ignored in \(state)")
 
-        // MARK: confirmingExited
+        // MARK: confirmingExited — the Tahoe fix compares baseline (at backupBegan) vs new.
         case (.confirming, .confirmingExited(let newPath, let exitProbeFailed)):
-            let prior = preConfirmLatestBackup
-            let entryProbeFailed = preConfirmProbeFailed
-            preConfirmLatestBackup = nil
-            preConfirmProbeFailed = false
+            let baseline = preBackupLatestBackup
+            let anyProbeFailed = preBackupProbeFailed
+            preBackupLatestBackup = nil
+            preBackupProbeFailed = false
             state = .idle
             var commands: [AppCommand] = [
                 .stopConfirmingTimer,
-                .clearPreConfirmLatestBackup
+                .clearPreBackupLatestBackup
             ]
-            // Locked Decision #3: snapshot-path advance is the ONLY authoritative success signal.
-            // If either probe failed we don't know whether the path advanced, so we must NOT
-            // claim success — otherwise a cancelled-but-existing-snapshot trip can auto-eject.
+            // Locked Decision #3 (Tahoe-corrected): the snapshot URL must advance between
+            // backupBegan and confirmingExited for it to count as success. If any probe
+            // failed along the way we have no reliable comparison, so we refuse.
             let succeeded: Bool = {
-                if entryProbeFailed || exitProbeFailed { return false }
+                if anyProbeFailed || exitProbeFailed { return false }
                 guard let new = newPath else { return false }
-                guard let old = prior else { return true }   // had no snapshot before; now we do
+                guard let old = baseline else { return true }   // had no snapshot before; now we do
                 return new != old
             }()
             if succeeded {
                 commands.append(.notify(title: "Backup complete", body: "Time Machine finished successfully."))
                 commands.append(.showToast(level: .success, message: "Backup complete"))
                 commands.append(.signalBackupCompleted)
-            } else if entryProbeFailed || exitProbeFailed {
+            } else if anyProbeFailed || exitProbeFailed {
                 commands.append(.showToast(level: .warning, message: "Backup ended (snapshot probe failed — not auto-ejecting)"))
             } else {
                 commands.append(.showToast(level: .info, message: "Backup ended without a new snapshot"))
@@ -122,8 +141,11 @@ struct StateMachine: Sendable {
              (.idle, .backupStopped),
              (.idleEjectFailed, .backupStopped):
             let wasRunning = state == .backingUp
+            // Cancellation — drop baseline so the next backup starts fresh.
+            preBackupLatestBackup = nil
+            preBackupProbeFailed = false
             state = .idle
-            var commands: [AppCommand] = [.stopStallTimer]
+            var commands: [AppCommand] = [.stopStallTimer, .clearPreBackupLatestBackup]
             if wasRunning {
                 commands.append(.showToast(level: .info, message: "Backup stopped"))
             }
@@ -135,9 +157,12 @@ struct StateMachine: Sendable {
 
         // MARK: stallDetected
         case (.backingUp, .stallDetected):
+            preBackupLatestBackup = nil
+            preBackupProbeFailed = false
             state = .idle
             return .accepted([
                 .stopStallTimer,
+                .clearPreBackupLatestBackup,
                 .showToast(level: .warning, message: "Backup stalled — totalBytes unchanged for 10 min"),
                 .setLastError("Stall: _raw_totalBytes unchanged for 10 min in backingUp")
             ])
@@ -149,12 +174,12 @@ struct StateMachine: Sendable {
 
         // MARK: confirmingTimedOut
         case (.confirming, .confirmingTimedOut):
-            preConfirmLatestBackup = nil
-            preConfirmProbeFailed = false
+            preBackupLatestBackup = nil
+            preBackupProbeFailed = false
             state = .idle
             return .accepted([
                 .stopConfirmingTimer,
-                .clearPreConfirmLatestBackup,
+                .clearPreBackupLatestBackup,
                 .showToast(level: .warning, message: "Confirming phase exceeded 4h — returning to idle"),
                 .setLastError("Confirming-phase 4h cap exceeded")
             ])

@@ -88,7 +88,11 @@ final class AutoEjectGuardTests: XCTestCase {
     func testFDADeniedNotification_RateLimited() async {
         let notifier = FakeSystemNotifier()
         await notifier.setAuthState(.authorized)
-        let coord = makeCoordinator(fdaState: .denied, notifier: notifier)
+        // Step 12.7 High #4 added an onboarding-completion gate to the FDA notification —
+        // mark onboarding done so the rate-limit branch is what we're actually exercising.
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(true, forKey: SettingsKey.hasCompletedOnboarding)
+        let coord = makeCoordinator(fdaState: .denied, notifier: notifier, defaults: defaults)
         coord.refreshFDAState(force: true)
         try? await Task.sleep(nanoseconds: 50_000_000)
         coord.setAutoEjectEnabled(true)

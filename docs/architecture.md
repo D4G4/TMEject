@@ -123,16 +123,18 @@ update — they're the most likely places to break.
 
 ### Snapshot path is written BEFORE TMEject's first confirming-phase poll on macOS 26.3.1
 
-> **Known bug — fix tracked separately, not yet landed.** Empirically observed during the
-> Step 13 discovery backup on 2026-06-14.
+**Fixed in Step 12.7+13 fixup** by moving the baseline capture from `confirmingEntered`
+to `backupBegan`. Decision #3 still stands at the policy level — snapshot-path delta IS
+the authoritative success signal — but the implementation detail of WHEN to capture the
+"before" side of that delta has been corrected for Tahoe's ordering.
 
-The locked Decision #3 says success is detected by `tmutil latestbackup` snapshot path
-advancing across the confirming-phase entry/exit. The assumption was that the new snapshot
-URL gets committed DURING the confirming phase, so a poll at confirming-entry returns the
-PRIOR snapshot URL and a poll at confirming-exit returns the NEW one.
+Originally locked Decision #3 captured the baseline at `confirmingEntered`. The assumption
+was that the new snapshot URL gets committed DURING the confirming phase, so a poll at
+confirming-entry returns the PRIOR snapshot URL and a poll at confirming-exit returns the
+NEW one.
 
 On macOS 26.3.1 the snapshot is committed BEFORE TMEject's first observation of the
-confirming phase. Real trace from the discovery backup:
+confirming phase. Real trace from the Step 13 discovery backup:
 
 - 14:51:22.246 `[DeferredSizing] Skipping further sizing for finished volume`
 - 14:51:22.358 `[BackupEngine] Completing backup`
@@ -143,17 +145,26 @@ confirming phase. Real trace from the discovery backup:
   '/Volumes/.timemachine/.../2026-06-14-145122.backup'`
 - 14:51:24.667 — TMEject sees `Running=false` → emits `confirmingExited`, captures
   latestbackup path → SAME `…/2026-06-14-145122.backup`
-- State machine: prior == new → false cancellation → no `signalBackupCompleted` →
-  no auto-eject
+- Old logic: entry == exit → false cancellation → no auto-eject.
 
-**Pending fix** (not yet implemented): capture the latestbackup baseline at `backupBegan`
-(or earlier, e.g. at coordinator launch) and use that as the comparison value at
-`confirmingExited`. The state machine's existing probe-failure handling continues to apply.
+**The fix**: `PollingObserver` now captures `tmutil latestbackup` at the moment it emits
+`backupBegan` — before backupd has committed the new snapshot — and passes it through as
+`baselineLatestBackupPath`. The state machine stores it in `preBackupLatestBackup` (was
+`preConfirmLatestBackup`). `confirmingExited` compares `baseline` vs `newPath`. Real
+trace with the fix:
 
-Until that lands, auto-eject is effectively broken for backups that take less than the
-poll interval to traverse the confirming phase (which appears to be all of them on Tahoe).
-The state machine is FUNCTIONING correctly per its current rules — the rule itself needs
-to change.
+- baseline at `backupBegan` ≈ `…/2026-06-13-100000.backup` (yesterday's last backup)
+- new at `confirmingExited` = `…/2026-06-14-145122.backup`
+- baseline != new → `.signalBackupCompleted` → auto-eject fires
+
+The `entryProbeFailed` channel survives as an OR-accumulator: if FDA grant breaks
+mid-backup (entry probe at `confirmingEntered` fails after a successful baseline probe),
+the state machine still refuses success. Persisted UserDefaults key renamed
+`preConfirmLatestBackupPath` → `preBackupLatestBackupPath`; restoration on relaunch
+restores into `.backingUp` OR `.confirming` based on current `tmutil status` phase.
+
+Test coverage: `testTahoeSnapshotRace_SnapshotCommitsBeforeConfirmingEntered_StillCountsAsSuccess`
+in `StateMachineTests` simulates the Tahoe ordering and asserts the success path fires.
 
 ### `NSDistributedNotificationCenter` wildcard observers are dead since macOS 10.15
 

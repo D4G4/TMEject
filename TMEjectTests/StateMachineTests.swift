@@ -10,7 +10,7 @@ final class StateMachineTests: XCTestCase {
         preConfirm: URL? = nil,
         preConfirmFailed: Bool = false
     ) -> StateMachine {
-        StateMachine(state: state, preConfirmLatestBackup: preConfirm, preConfirmProbeFailed: preConfirmFailed)
+        StateMachine(state: state, preBackupLatestBackup: preConfirm, preBackupProbeFailed: preConfirmFailed)
     }
 
     private func accept(_ outcome: GuardOutcome) -> [AppCommand]? {
@@ -38,53 +38,101 @@ final class StateMachineTests: XCTestCase {
 
     func testBackupBeganMovesIdleToBackingUp() {
         var m = sm(.idle)
-        let cmds = accept(m.handle(.backupBegan))
+        let cmds = accept(m.handle(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false)))
         XCTAssertEqual(m.state, .backingUp)
+        // Step 12.7+13 fixup: backupBegan emits .recordPreBackupLatestBackup with whatever
+        // baseline the observer captured (nil here). State machine stashes baseline + flag.
         XCTAssertEqual(cmds, [
+            .recordPreBackupLatestBackup(nil),
             .setLastError(nil),
             .startStallTimer,
             .showToast(level: .info, message: "Backup started")
         ])
+        XCTAssertNil(m.preBackupLatestBackup)
+        XCTAssertFalse(m.preBackupProbeFailed)
+    }
+
+    func testBackupBeganCapturesNonNilBaseline_TahoeFix() {
+        let priorSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
+        var m = sm(.idle)
+        let cmds = accept(m.handle(.backupBegan(baselineLatestBackupPath: priorSnap,
+                                                  baselineProbeFailed: false))) ?? []
+        XCTAssertEqual(m.preBackupLatestBackup, priorSnap,
+                       "Tahoe fix: baseline captured at backupBegan, not at confirmingEntered")
+        XCTAssertTrue(cmds.contains(.recordPreBackupLatestBackup(priorSnap)))
+    }
+
+    func testBackupBeganCarriesProbeFailureFlag() {
+        var m = sm(.idle)
+        _ = m.handle(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: true))
+        XCTAssertTrue(m.preBackupProbeFailed,
+                       "FDA-denied baseline probe must propagate so confirmingExited refuses success")
     }
 
     func testBackupBeganMovesIdleEjectFailedToBackingUp_CoverageGap() {
         var m = sm(.idleEjectFailed)
-        let cmds = accept(m.handle(.backupBegan))
+        let cmds = accept(m.handle(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))) ?? []
         XCTAssertEqual(m.state, .backingUp)
-        XCTAssertEqual(cmds?.first, .setLastError(nil),
-                       "starting a new backup clears the stale eject error")
+        XCTAssertTrue(cmds.contains(.setLastError(nil)),
+                      "starting a new backup clears the stale eject error")
     }
 
     func testBackupBeganIgnoredInBackingUpConfirmingEjecting() {
         for s in [AppState.backingUp, .confirming, .ejecting] {
             var m = sm(s)
-            XCTAssertTrue(ignored(m.handle(.backupBegan)))
+            XCTAssertTrue(ignored(m.handle(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))))
             XCTAssertEqual(m.state, s)
         }
     }
 
-    func testConfirmingEnteredRecordsPathAndTransitions() {
-        let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
-        for from in [AppState.idle, .idleEjectFailed, .backingUp] {
-            var m = sm(from)
-            let cmds = accept(m.handle(.confirmingEntered(latestBackupPath: snap, entryProbeFailed: false)))
-            XCTAssertEqual(m.state, .confirming, "from \(from)")
-            XCTAssertEqual(m.preConfirmLatestBackup, snap, "from \(from)")
-            XCTAssertFalse(m.preConfirmProbeFailed, "from \(from)")
-            XCTAssertEqual(cmds, [
-                .recordPreConfirmLatestBackup(snap),
-                .stopStallTimer,
-                .startConfirmingTimer
-            ])
-        }
+    // Step 12.7+13 fixup: confirmingEntered no longer overwrites the baseline (that was
+    // captured at backupBegan). It just transitions + restarts the timers.
+    func testConfirmingEnteredTransitionsAndStartsConfirmingTimer() {
+        let priorBaseline = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
+        // Seed a baseline as if backupBegan had captured one.
+        var m = sm(.backingUp, preConfirm: priorBaseline)
+        // confirmingEntered with a DIFFERENT path — the state machine must NOT overwrite.
+        let confirmingPath = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-145122")
+        let cmds = accept(m.handle(.confirmingEntered(latestBackupPath: confirmingPath, entryProbeFailed: false)))
+        XCTAssertEqual(m.state, .confirming)
+        XCTAssertEqual(m.preBackupLatestBackup, priorBaseline,
+                       "Tahoe fix: confirmingEntered must NOT touch the baseline captured at backupBegan")
+        XCTAssertFalse(m.preBackupProbeFailed)
+        XCTAssertEqual(cmds, [.stopStallTimer, .startConfirmingTimer])
     }
 
-    func testConfirmingEnteredRecordsProbeFailedFlag() {
-        var m = sm(.backingUp)
+    func testConfirmingEnteredORsInProbeFailedFlag() {
+        let priorBaseline = URL(fileURLWithPath: "/snap/baseline")
+        var m = sm(.backingUp, preConfirm: priorBaseline)
         _ = m.handle(.confirmingEntered(latestBackupPath: nil, entryProbeFailed: true))
         XCTAssertEqual(m.state, .confirming)
-        XCTAssertNil(m.preConfirmLatestBackup)
-        XCTAssertTrue(m.preConfirmProbeFailed)
+        XCTAssertEqual(m.preBackupLatestBackup, priorBaseline,
+                       "baseline survives the entry-probe failure")
+        XCTAssertTrue(m.preBackupProbeFailed,
+                      "FDA grant breaking mid-backup must block success on exit")
+    }
+
+    // Tahoe race: backupBegan captures baseline X. By the time confirmingEntered fires,
+    // backupd has already committed the new snapshot Y. Entry sees Y (NEW). Exit also sees
+    // Y. With the OLD (Step-5) rule (compare entry vs exit), this looked like cancellation.
+    // With the new rule (compare baseline at backupBegan vs exit), Y != X → success.
+    func testTahoeSnapshotRace_SnapshotCommitsBeforeConfirmingEntered_StillCountsAsSuccess() {
+        let baselineSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-13-100000")
+        let newSnap      = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-14-145122")
+        // backupBegan stashes baseline.
+        var m = sm(.idle)
+        _ = m.handle(.backupBegan(baselineLatestBackupPath: baselineSnap, baselineProbeFailed: false))
+        XCTAssertEqual(m.state, .backingUp)
+        // Tahoe quirk: by confirmingEntered the new snapshot has already landed.
+        _ = m.handle(.confirmingEntered(latestBackupPath: newSnap, entryProbeFailed: false))
+        XCTAssertEqual(m.state, .confirming)
+        XCTAssertEqual(m.preBackupLatestBackup, baselineSnap,
+                       "the new snapshot URL leaking into entry-probe must not poison the baseline")
+        // confirmingExited sees the same newSnap (snapshot is now stable).
+        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: newSnap, exitProbeFailed: false))) ?? []
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertTrue(cmds.contains(.signalBackupCompleted),
+                      "snapshot URL advanced (baselineSnap → newSnap) — must count as success on Tahoe")
     }
 
     func testConfirmingExitedAdvancedPathCountsAsSuccess() {
@@ -93,10 +141,10 @@ final class StateMachineTests: XCTestCase {
         var m = sm(.confirming, preConfirm: oldSnap)
         let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: newSnap, exitProbeFailed: false))) ?? []
         XCTAssertEqual(m.state, .idle)
-        XCTAssertNil(m.preConfirmLatestBackup)
-        XCTAssertFalse(m.preConfirmProbeFailed)
+        XCTAssertNil(m.preBackupLatestBackup)
+        XCTAssertFalse(m.preBackupProbeFailed)
         XCTAssertTrue(cmds.contains(.stopConfirmingTimer))
-        XCTAssertTrue(cmds.contains(.clearPreConfirmLatestBackup))
+        XCTAssertTrue(cmds.contains(.clearPreBackupLatestBackup))
         XCTAssertTrue(cmds.contains(.signalBackupCompleted))
         XCTAssertTrue(cmds.contains(where: { if case .notify(let t, _) = $0 { return t == "Backup complete" }; return false }))
     }
@@ -189,8 +237,8 @@ final class StateMachineTests: XCTestCase {
         var m = sm(.confirming, preConfirm: URL(fileURLWithPath: "/snap"))
         let cmds = accept(m.handle(.confirmingTimedOut)) ?? []
         XCTAssertEqual(m.state, .idle)
-        XCTAssertNil(m.preConfirmLatestBackup)
-        XCTAssertFalse(m.preConfirmProbeFailed)
+        XCTAssertNil(m.preBackupLatestBackup)
+        XCTAssertFalse(m.preBackupProbeFailed)
         XCTAssertTrue(cmds.contains(.stopConfirmingTimer))
         XCTAssertTrue(cmds.contains(where: { if case .setLastError(let s) = $0 { return s?.contains("4h") == true }; return false }))
     }
@@ -258,15 +306,15 @@ final class StateMachineTests: XCTestCase {
     func testRestoreConfirmingFromRelaunchSetsState() {
         let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-11-100000")
         var m = sm(.idle)
-        m.restoreConfirmingFromRelaunch(latestBackupPath: snap, entryProbeFailed: false)
+        m.restoreInFlightFromRelaunch(intoState: .confirming, baselineLatestBackupPath: snap, baselineProbeFailed: false)
         XCTAssertEqual(m.state, .confirming)
-        XCTAssertEqual(m.preConfirmLatestBackup, snap)
-        XCTAssertFalse(m.preConfirmProbeFailed)
+        XCTAssertEqual(m.preBackupLatestBackup, snap)
+        XCTAssertFalse(m.preBackupProbeFailed)
     }
 
     func testRestoreConfirmingFromRelaunchOnlyAppliesFromIdle() {
         var m = sm(.backingUp)
-        m.restoreConfirmingFromRelaunch(latestBackupPath: URL(fileURLWithPath: "/x"), entryProbeFailed: false)
+        m.restoreInFlightFromRelaunch(intoState: .confirming, baselineLatestBackupPath: URL(fileURLWithPath: "/x"), baselineProbeFailed: false)
         XCTAssertEqual(m.state, .backingUp, "must not bulldoze a live state")
     }
 
@@ -290,10 +338,15 @@ final class StateMachineTests: XCTestCase {
 
     func testHappyPath_idleToEjectedViaSnapshotAdvance() {
         var m = sm(.idle)
-        XCTAssertEqual(accept(m.handle(.backupBegan))?.first, .setLastError(nil))
-        XCTAssertEqual(m.state, .backingUp)
-
+        // backupBegan carries the baseline snapshot — the OLD one, captured before backupd
+        // wrote the new one.
         let oldSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
+        let beganCmds = accept(m.handle(.backupBegan(baselineLatestBackupPath: oldSnap,
+                                                       baselineProbeFailed: false))) ?? []
+        XCTAssertTrue(beganCmds.contains(.setLastError(nil)))
+        XCTAssertEqual(m.state, .backingUp)
+        XCTAssertEqual(m.preBackupLatestBackup, oldSnap)
+
         _ = m.handle(.confirmingEntered(latestBackupPath: oldSnap, entryProbeFailed: false))
         XCTAssertEqual(m.state, .confirming)
 
@@ -310,7 +363,7 @@ final class StateMachineTests: XCTestCase {
 
     func testCancellationPath_backingUpThenBackupStopped_doesNotSignalCompletion() {
         var m = sm(.idle)
-        _ = m.handle(.backupBegan)
+        _ = m.handle(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))
         let cmds = accept(m.handle(.backupStopped)) ?? []
         XCTAssertEqual(m.state, .idle)
         XCTAssertFalse(cmds.contains(.signalBackupCompleted))
@@ -318,7 +371,7 @@ final class StateMachineTests: XCTestCase {
 
     func testStallPath_backingUp_stallDetected_returnsToIdleWithoutEject() {
         var m = sm(.idle)
-        _ = m.handle(.backupBegan)
+        _ = m.handle(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))
         let cmds = accept(m.handle(.stallDetected)) ?? []
         XCTAssertEqual(m.state, .idle)
         XCTAssertFalse(cmds.contains(.signalBackupCompleted))

@@ -11,7 +11,7 @@ enum SettingsKey {
     static let hasCompletedOnboarding  = "co.dls.tmeject.hasCompletedOnboarding"
     static let hasSeenLaunchHUD        = "co.dls.tmeject.hasSeenLaunchHUD"
     static let betaChannel             = "co.dls.tmeject.betaChannel"
-    static let preConfirmLatestBackup  = "co.dls.tmeject.preConfirmLatestBackupPath"
+    static let preBackupLatestBackup   = "co.dls.tmeject.preBackupLatestBackupPath"
     static let launchAtLogin           = "co.dls.tmeject.launchAtLogin"     // @AppStorage mirror
     static let forceOnboardingModal    = "co.dls.tmeject.forceOnboardingModal"   // Set by Reset Onboarding
     static let translucentSurfaces     = "co.dls.tmeject.translucentSurfaces"    // default false (opaque solid)

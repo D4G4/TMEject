@@ -104,7 +104,7 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
         let notifier = FakeSystemNotifier()
         let (coord, _) = await makeCoordinator(toasts: true, notifier: notifier,
                                                 presenter: presenter, unmount: FakeUnmountBridge())
-        await coord.deliverForTesting(.backupBegan)
+        await coord.deliverForTesting(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))
         try? await Task.sleep(nanoseconds: 20_000_000)
         // Title enriched to "Backing up…" per the design pass (was the raw "Backup started"
         // before). Subtitle varies by auto-eject state; assert via title + kind only.
@@ -118,7 +118,7 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
         let notifier = FakeSystemNotifier()
         let (coord, _) = await makeCoordinator(toasts: false, notifier: notifier,
                                                 presenter: presenter, unmount: FakeUnmountBridge())
-        await coord.deliverForTesting(.backupBegan)
+        await coord.deliverForTesting(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))
         try? await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertTrue(presenter.presented.isEmpty)
         XCTAssertNotNil(coord.lastToast,

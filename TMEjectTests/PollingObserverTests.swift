@@ -70,23 +70,27 @@ final class PollingObserverTests: XCTestCase {
         let observer = makeObserver(tmutil: tmutil, clock: FakeClock(), box: box)
         await observer.runOnce()
         let events = await box.snapshot()
-        XCTAssertEqual(events, [.backupBegan])
+        XCTAssertEqual(events, [.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false)])
     }
 
     func testEnteringConfirmingFromCopyingEmitsConfirmingEnteredWithSnapshot() async throws {
-        let snap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-11-100000")
+        // Tahoe fix: observer now also captures latestbackup at backupBegan. Need to enqueue
+        // two responses — one for the baseline at backupBegan, one for confirmingEntered.
+        let baselineSnap = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-10-100000")
+        let entrySnap    = URL(fileURLWithPath: "/Volumes/Backup/Backups.backupdb/Mac/2026-06-11-100000")
         let tmutil = FakeTMUtilClient()
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Copying", rawTotalBytes: 1000)))
+        await tmutil.enqueueLatestBackup(.success(baselineSnap))   // consumed by backupBegan
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Finishing", rawTotalBytes: 2000)))
-        await tmutil.enqueueLatestBackup(.success(snap))
+        await tmutil.enqueueLatestBackup(.success(entrySnap))      // consumed by confirmingEntered
         let box = EventBox()
         let observer = makeObserver(tmutil: tmutil, clock: FakeClock(), box: box)
         await observer.runOnce()
         await observer.runOnce()
         let events = await box.snapshot()
         XCTAssertEqual(events, [
-            .backupBegan,
-            .confirmingEntered(latestBackupPath: snap, entryProbeFailed: false)
+            .backupBegan(baselineLatestBackupPath: baselineSnap, baselineProbeFailed: false),
+            .confirmingEntered(latestBackupPath: entrySnap, entryProbeFailed: false)
         ])
     }
 
@@ -149,7 +153,7 @@ final class PollingObserverTests: XCTestCase {
         await observer.runOnce()
         await observer.runOnce()
         let events = await box.snapshot()
-        XCTAssertEqual(events, [.backupBegan, .backupStopped])
+        XCTAssertEqual(events, [.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false), .backupStopped])
     }
 
     // M5: stall detector is inactive until setStallTracking(active: true) is called.
@@ -164,7 +168,7 @@ final class PollingObserverTests: XCTestCase {
         await clock.tick(11 * 60)
         await observer.runOnce()           // no stall — tracking never activated
         let events = await box.snapshot()
-        XCTAssertEqual(events, [.backupBegan])
+        XCTAssertEqual(events, [.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false)])
     }
 
     func testStallDetectionFiresAfter10MinWhenActive() async throws {
@@ -179,7 +183,7 @@ final class PollingObserverTests: XCTestCase {
         await clock.tick(11 * 60)
         await observer.runOnce()           // bytes unchanged 11min → stall
         let events = await box.snapshot()
-        XCTAssertEqual(events, [.backupBegan, .stallDetected])
+        XCTAssertEqual(events, [.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false), .stallDetected])
     }
 
     // M5: confirming hard cap inactive until setConfirmingTracking(active: true) is called.
@@ -229,6 +233,6 @@ final class PollingObserverTests: XCTestCase {
         await observer.runOnce()
         await observer.runOnce()
         let events = await box.snapshot()
-        XCTAssertEqual(events, [.backupBegan])
+        XCTAssertEqual(events, [.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false)])
     }
 }

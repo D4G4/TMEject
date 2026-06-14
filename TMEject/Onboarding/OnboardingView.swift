@@ -96,6 +96,10 @@ struct OnboardingView: View {
 
     private var footerSection: some View {
         VStack(spacing: 10) {
+            // FDA pill — same conditional as popover / Settings. Step 12.7 High #2.
+            if autoEjectEnabled && coordinator.fdaState != .granted {
+                FDAPill()
+            }
             HStack(spacing: 9) {
                 Text("Turn on auto-eject after backups")
                     .font(.system(size: 12.5))
@@ -120,5 +124,35 @@ struct OnboardingView: View {
         .padding(.horizontal, 30)
         .padding(.top, 16)
         .padding(.bottom, 22)
+    }
+}
+
+/// Shared FDA "Auto-eject paused · Grant Full Disk Access" pill used by popover, Settings,
+/// and Onboarding. Tap → System Settings → Privacy & Security → Full Disk Access.
+struct FDAPill: View {
+    var body: some View {
+        Button {
+            UIActionLogger.buttonTapped("Open Full Disk Access", context: "FDAPill")
+            NSWorkspace.shared.open(SystemSettingsLink.fullDiskAccess)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.open.fill")
+                    .font(.system(size: 11))
+                Text("Auto-eject paused · Grant Full Disk Access")
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+            }
+            .padding(.vertical, 9)
+            .padding(.horizontal, 11)
+            .frame(maxWidth: .infinity)
+            .background(Color.orange.opacity(0.16),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.orange.opacity(0.55), lineWidth: Spacing.hairline)
+            )
+            .foregroundStyle(Color.orange)
+        }
+        .buttonStyle(.plain)
     }
 }

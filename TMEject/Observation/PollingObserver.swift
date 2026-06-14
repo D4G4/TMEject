@@ -101,9 +101,11 @@ actor PollingObserver {
         let prevRunning = lastRunning
         let prevPhaseKind = lastPhaseKind
 
-        // Transition: idle → running, non-confirming.
+        // Transition: idle → running, non-confirming. Capture latestbackup BEFORE the new
+        // snapshot lands so the state machine has a real baseline for delta detection.
         if !prevRunning && status.running && !phase.isConfirming {
-            await emit(.backupBegan)
+            let (path, failed) = await captureLatestBackup()
+            await emit(.backupBegan(baselineLatestBackupPath: path, baselineProbeFailed: failed))
         }
 
         // Transition: enter confirming.
