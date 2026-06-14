@@ -381,7 +381,24 @@ final class AppCoordinator: ObservableObject {
 
     // MARK: - M3 relaunch restore
 
+    /// Step 13 fixup — migrate the pre-rename key. Existing installs persisted in-flight
+    /// state under `co.dls.tmeject.preConfirmLatestBackupPath`; the Tahoe baseline fix
+    /// moved capture to backupBegan and renamed to `preBackupLatestBackupPath`. Copy any
+    /// stale value forward once, then delete the legacy key. Idempotent — subsequent runs
+    /// see the legacy key already gone.
+    private static let legacyPreConfirmPathKey = "co.dls.tmeject.preConfirmLatestBackupPath"
+
+    private func migrateLegacyPersistedBaseline() {
+        guard let legacy = defaults.string(forKey: Self.legacyPreConfirmPathKey) else { return }
+        if defaults.string(forKey: Self.preBackupPathKey) == nil {
+            defaults.set(legacy, forKey: Self.preBackupPathKey)
+            TMEjectLog.app.info("Migrated preConfirmLatestBackupPath → preBackupLatestBackupPath: \(legacy)")
+        }
+        defaults.removeObject(forKey: Self.legacyPreConfirmPathKey)
+    }
+
     private func restoreFromRelaunchIfNeeded() async {
+        migrateLegacyPersistedBaseline()
         guard let savedPath = defaults.string(forKey: Self.preBackupPathKey) else { return }
         let status: StatusPlist
         do {

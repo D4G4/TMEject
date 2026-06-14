@@ -69,6 +69,28 @@ final class StateMachineTests: XCTestCase {
                        "FDA-denied baseline probe must propagate so confirmingExited refuses success")
     }
 
+    // H2 at the new capture point: if the baseline probe at backupBegan fails (e.g. FDA
+    // denied at that moment), the state machine must refuse to claim success even if the
+    // exit probe later returns a non-nil path.
+    func testBaselineProbeFailedAtBackupBegan_RefusesSuccess() {
+        var m = sm(.idle)
+        _ = m.handle(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: true))
+        XCTAssertEqual(m.state, .backingUp)
+        XCTAssertTrue(m.preBackupProbeFailed)
+
+        _ = m.handle(.confirmingEntered(latestBackupPath: nil, entryProbeFailed: false))
+        XCTAssertTrue(m.preBackupProbeFailed,
+                       "entry probe succeeding doesn't clear the baseline-probe failure")
+
+        let exitSnap = URL(fileURLWithPath: "/Volumes/Backup/2026-06-14-145122.backup")
+        let cmds = accept(m.handle(.confirmingExited(newLatestBackupPath: exitSnap,
+                                                      exitProbeFailed: false))) ?? []
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertFalse(cmds.contains(.signalBackupCompleted),
+                       "baseline probe failed → no reliable comparison → refuse success")
+        XCTAssertTrue(cmds.contains(where: { if case .showToast(_, let msg) = $0 { return msg.contains("probe failed") }; return false }))
+    }
+
     func testBackupBeganMovesIdleEjectFailedToBackingUp_CoverageGap() {
         var m = sm(.idleEjectFailed)
         let cmds = accept(m.handle(.backupBegan(baselineLatestBackupPath: nil, baselineProbeFailed: false))) ?? []
