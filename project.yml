@@ -61,3 +61,18 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TMEject.app/Contents/MacOS/TMEject"
+  TMEjectSnapshotTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: TMEjectSnapshotTests
+        excludes:
+          - "__Snapshots__/**"
+    dependencies:
+      - target: TMEject
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.dls.tmeject.snapshottests
+        GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TMEject.app/Contents/MacOS/TMEject"

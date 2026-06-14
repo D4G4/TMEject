@@ -363,6 +363,34 @@ final class AppCoordinator: ObservableObject {
         await deliver(event)
     }
 
+    #if DEBUG
+    /// Snapshot-test seam — set every UI-bound property at once for reproducible renders.
+    /// Marked DEBUG-only so the setters can't leak into a shipping build.
+    func applySnapshotState(
+        state: AppState? = nil,
+        backupPct: Double? = nil,
+        ejectPct: Double? = nil,
+        ejectAttempt: Int? = nil,
+        drivePresent: Bool? = nil,
+        driveName: String? = nil,
+        lastError: String? = nil,
+        ritualConfirmPct: Double? = nil,
+        loginItemStatus: LoginItemStatus? = nil,
+        fdaState: FDAState? = nil
+    ) {
+        if let state            { self.state = state }
+        if let backupPct        { self.backupPct = backupPct }
+        if let ejectPct         { self.ejectPct = ejectPct }
+        if let ejectAttempt     { self.ejectAttempt = ejectAttempt }
+        if let drivePresent     { self.drivePresent = drivePresent }
+        if let driveName        { self.driveName = driveName }
+        if let lastError        { self.lastError = lastError }
+        if let ritualConfirmPct { self.ritualConfirmPct = ritualConfirmPct }
+        if let loginItemStatus  { self.loginItemStatus = loginItemStatus }
+        if let fdaState         { self.fdaState = fdaState }
+    }
+    #endif
+
     private func deliver(_ event: AppEvent) async {
         TMEjectLog.state.debug("Event: \(event)")
         let prior = machine.state
