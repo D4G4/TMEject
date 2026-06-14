@@ -123,7 +123,12 @@ private struct ToastView: View {
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
         .frame(width: 300, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .surfaceBackground(.toast)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: Spacing.hairline)
+        )
     }
 
     @ViewBuilder

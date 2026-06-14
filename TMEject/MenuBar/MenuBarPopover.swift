@@ -15,6 +15,7 @@ struct MenuBarPopoverView: View {
             }
         }
         .frame(width: Spacing.popoverWidth)
+        .surfaceBackground(.popover)
         .animation(.easeInOut(duration: 0.18), value: coordinator.state)
         .animation(.easeInOut(duration: 0.18), value: coordinator.ritualConfirmPct != nil)
         .onAppear {
@@ -375,7 +376,9 @@ struct MenuBarPopoverView: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial)
+        // Always solid — the overlay must fully cover the popover content underneath in BOTH
+        // translucency modes (per Step 12.7 amendment §7).
+        .background(Color.surfacePopover)
     }
 }
 

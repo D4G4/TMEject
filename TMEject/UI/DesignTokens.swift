@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Design tokens from the Claude Design pass (Step 12.7). System semantic colors are
 /// preferred everywhere; the ritual teal is the ONLY custom color.
@@ -20,6 +21,96 @@ extension Color {
     /// Slightly darker ritual for label text on the soft fill — matches `--ritual-strong`.
     static var ritualStrong: Color {
         Color(.sRGB, red: 0.24, green: 0.50, blue: 0.50, opacity: 1)
+    }
+
+    // MARK: - Solid surfaces (Step 12.7 amendment)
+    //
+    // Light/dark trait-aware solid color tokens. The RGB values come from the Step 12.7
+    // amendment translation table — picked to match the visual weight of the design CSS
+    // materials (`--material-thick`, `--win-bg`, `--win-content`) under typical wallpapers
+    // without actually being translucent.
+
+    /// Popover / HUD / Toast background. Solid by default; SurfaceBackground swaps to
+    /// `.regularMaterial` when the user opts in via Settings → General → Translucent windows.
+    static let surfacePopover = Color(nsColor: NSColor(name: nil) { trait in
+        Self.isDark(trait)
+            ? NSColor(red: 0.188, green: 0.188, blue: 0.200, alpha: 1)  // #303033
+            : NSColor(red: 0.980, green: 0.980, blue: 0.980, alpha: 1)  // #FAFAFA
+    })
+
+    /// Settings window background. Slightly cooler than `surfacePopover` to match macOS
+    /// system Settings.
+    static let surfaceWindow = Color(nsColor: NSColor(name: nil) { trait in
+        Self.isDark(trait)
+            ? NSColor(red: 0.149, green: 0.149, blue: 0.157, alpha: 1)  // #262628
+            : NSColor(red: 0.925, green: 0.925, blue: 0.933, alpha: 1)  // #ECECEE
+    })
+
+    /// Settings group card background — a hair lighter than `surfaceWindow` so cards sit on
+    /// the window with a soft tonal lift.
+    static let surfaceCard = Color(nsColor: NSColor(name: nil) { trait in
+        Self.isDark(trait)
+            ? NSColor(red: 0.118, green: 0.118, blue: 0.125, alpha: 1)  // #1E1E20
+            : NSColor(red: 0.988, green: 0.988, blue: 0.992, alpha: 1)  // #FCFCFD
+    })
+
+    /// The documented "is this trait dark mode" check; matches the canonical Apple pattern.
+    private static func isDark(_ trait: NSAppearance) -> Bool {
+        trait.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+}
+
+// MARK: - SurfaceBackground modifier
+
+enum SurfaceRole: Sendable {
+    case popover
+    case window
+    case card
+    case toast
+    case hud
+}
+
+/// View modifier that paints the appropriate background for a surface role, choosing
+/// between SwiftUI Material and the solid `Color.surface*` token based on the
+/// `translucentSurfaces` user preference. @AppStorage propagation re-renders both modes
+/// live; no window recreation needed.
+struct SurfaceBackground: ViewModifier {
+    @AppStorage(SettingsKey.translucentSurfaces) private var translucent: Bool = false
+    let role: SurfaceRole
+
+    func body(content: Content) -> some View {
+        content.background(backgroundView)
+    }
+
+    @ViewBuilder
+    private var backgroundView: some View {
+        if translucent {
+            switch role {
+            case .popover, .toast, .hud:
+                Rectangle().fill(.regularMaterial)
+            case .window:
+                Rectangle().fill(.thickMaterial)
+            case .card:
+                // The design's group card is a tonal lift on top of the window background.
+                // Material on material wouldn't read right; in translucent mode the card
+                // inherits the window's material via an opaque overlay at low strength.
+                Color.surfaceCard.opacity(0.55)
+            }
+        } else {
+            switch role {
+            case .popover, .toast, .hud: Color.surfacePopover
+            case .window:                Color.surfaceWindow
+            case .card:                  Color.surfaceCard
+            }
+        }
+    }
+}
+
+extension View {
+    /// Paints the role's background (Material when translucentSurfaces=true, solid Color
+    /// otherwise) behind the receiver. Call sites stay branch-free.
+    func surfaceBackground(_ role: SurfaceRole) -> some View {
+        modifier(SurfaceBackground(role: role))
     }
 }
 

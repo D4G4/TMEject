@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.cooldownMinutes)     private var cooldownMinutes  = 30
     @AppStorage(SettingsKey.betaChannel)         private var betaChannel      = false
     @AppStorage(SettingsKey.toastsEnabled)       private var toastsEnabled    = true
+    @AppStorage(SettingsKey.translucentSurfaces) private var translucentSurfaces = false
     @AppStorage(SettingsKey.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @AppStorage(SettingsKey.hasSeenLaunchHUD)    private var hasSeenLaunchHUD = false
     @AppStorage(SettingsKey.forceOnboardingModal) private var forceOnboardingModal = false
@@ -96,6 +97,14 @@ struct SettingsView: View {
                             .toggleStyle(.switch)
                             .controlSize(.small)
                     }
+                    Divider().opacity(0.6)
+                    row(title: "Translucent windows",
+                        subtitle: "Use macOS material backgrounds. May reduce readability over busy wallpapers.") {
+                        Toggle("", isOn: $translucentSurfaces)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
                 }
 
                 // Troubleshooting disclosure
@@ -152,7 +161,7 @@ struct SettingsView: View {
         }
         .frame(width: Spacing.windowWidth)
         .frame(minHeight: 360, maxHeight: Spacing.windowMaxHeight)
-        .background(.thickMaterial)
+        .surfaceBackground(.window)
         .onAppear {
             coordinator.refreshLoginItemStatus()
             coordinator.refreshFDAState()
@@ -175,8 +184,8 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         VStack(spacing: 0) { content() }
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.6),
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .surfaceBackground(.card)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(Color.secondary.opacity(0.18), lineWidth: Spacing.hairline)

@@ -17,7 +17,7 @@ struct OnboardingView: View {
             footerSection
         }
         .frame(width: 420)
-        .background(.thickMaterial)
+        .surfaceBackground(.window)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16)

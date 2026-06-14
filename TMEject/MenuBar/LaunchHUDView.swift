@@ -47,7 +47,11 @@ struct LaunchHUDView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(width: 252)
-        .background(.regularMaterial,
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .surfaceBackground(.hud)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: Spacing.hairline)
+        )
     }
 }
