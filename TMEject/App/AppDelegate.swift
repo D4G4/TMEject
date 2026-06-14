@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }()
     private let onboarding = OnboardingWindowController()
     private let launchHUD = LaunchHUDWindowController()
+    private var logStreamObserver: LogStreamObserver?
 
     override init() {
         let overlay = self.toastOverlay
@@ -26,6 +27,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         presentLaunchSurfacesIfNeeded()
         TMEjectUpdater.shared.checkForUpdatesInBackgroundAfterLaunchSettle()
 
+        // Step 13 wake-latency optimization. Per locked Decision #1, polling stays primary;
+        // the log-stream observer just nudges the poller to run sooner than its 30s/5s
+        // cadence when backupd/TimeMachine activity is detected.
+        let observer = LogStreamObserver(onWake: { [weak self] in
+            await MainActor.run { self?.coordinator.requestPokeNow() }
+        })
+        self.logStreamObserver = observer
+        Task { await observer.start() }
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -40,9 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationWillTerminate(_ notification: Notification) {
         TMEjectLog.app.info("applicationWillTerminate")
+        let logStream = logStreamObserver
         Task {
             await coordinator.dispatch(.appWillTerminate)
             await coordinator.stop()
+            await logStream?.stop()
         }
     }
 

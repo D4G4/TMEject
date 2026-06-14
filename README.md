@@ -26,9 +26,8 @@ Non-sandboxed, Developer ID signed and notarized. Auto-updates via Sparkle 2.x.
 ## Compatibility
 
 Tested on **macOS 26.3.1 (Tahoe)** with the bundled Time Machine. Min deployment
-target is macOS 14. Re-verify the notification-name discovery procedure on each
-major macOS update before relying on the wake-optimization observer — see
-[`docs/dnc-discovery.md`](docs/dnc-discovery.md).
+target is macOS 14. Re-verify the wake-event discovery procedure on each major
+macOS update — see [`docs/log-stream-discovery.md`](docs/log-stream-discovery.md).
 
 ## Build
 

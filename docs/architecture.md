@@ -121,6 +121,25 @@ Things that work differently on macOS 26 (Tahoe) than the documented contract
 or than older macOS releases. Re-verify each of these on the next major OS
 update — they're the most likely places to break.
 
+### `NSDistributedNotificationCenter` wildcard observers are dead since macOS 10.15
+
+Original plan was to subscribe to backupd's distributed notifications via
+`NSDistributedNotificationCenter.addObserver(forName: nil, ...)` and discover names
+empirically. Since macOS 10.15 (Catalina, Oct 2019) **wildcard observers on
+DistributedNotificationCenter — both the per-user bus the Swift wrapper exposes and
+the system bus reached via `CFNotificationCenterGetDistributedCenter()` — are a
+privileged operation that silently fails for non-root processes**. Tahoe is well past
+that cutoff. The code would compile and register without error, then receive nothing.
+
+Wake-latency optimization uses `log stream --predicate '(processImagePath CONTAINS
+"backupd") OR (subsystem == "com.apple.TimeMachine")' --info --style=ndjson` instead,
+running as a child `Process`. Each backupd/TimeMachine event nudges the polling observer
+to run sooner than its scheduled 30s/5s cadence. Polling `tmutil status -X` remains the
+PRIMARY observation signal per Decision #1 — log-stream is purely a wake-latency
+optimization, never a state driver. Prior art: `gettes/TimeMachineMonitor` and
+`BrianHenryIE/UnmountVolumeAfterTimeMachine` both avoid DNC and use the same log-stream
+approach.
+
 ### `tmutil latestbackup` and `tmutil listbackups` require Full Disk Access
 
 Verified empirically on 26.3.1. The error is distinctive:
