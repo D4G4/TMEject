@@ -111,10 +111,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private func presentLaunchHUDIfNeeded() {
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: SettingsKey.hasSeenLaunchHUD) { return }
-        launchHUD.show(onDismiss: { [weak self] in
-            defaults.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
-            NSApp.setActivationPolicy(.accessory)
-            self?.coordinator.requestPokeNow()
-        })
+        launchHUD.show(
+            onFound: { [weak self] in
+                defaults.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
+                NSApp.setActivationPolicy(.accessory)
+                self?.coordinator.requestPokeNow()
+            },
+            onCantFind: { [weak self] in
+                defaults.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
+                NSApp.setActivationPolicy(.accessory)
+                self?.launchHUD.showCantFindAlert()
+            }
+        )
     }
 }

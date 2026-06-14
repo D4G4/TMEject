@@ -6,10 +6,11 @@ import SwiftUI
 final class LaunchHUDSnapshotTests: SnapshotTestCase {
 
     private func render(theme: ColorScheme, translucent: Bool) {
-        let view = LaunchHUDView(onDismiss: {})
+        let view = LaunchHUDView(onFound: {}, onCantFind: {})
         let name = SnapshotName.surface("launch_hud", theme: theme, translucent: translucent)
+        // 340pt wide × 140pt tall per Blink's pattern (was 252×200).
         assertSnapshot(of: view, named: name,
-                        width: 290, height: 200, colorScheme: theme, translucent: translucent)
+                        width: 360, height: 160, colorScheme: theme, translucent: translucent)
     }
 
     func testLightOpaque()      { render(theme: .light, translucent: false) }

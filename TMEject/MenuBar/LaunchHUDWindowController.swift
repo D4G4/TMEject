@@ -5,23 +5,29 @@ import SwiftUI
 final class LaunchHUDWindowController {
     private var window: NSPanel?
 
-    func show(onDismiss: @escaping () -> Void) {
+    func show(onFound: @escaping () -> Void, onCantFind: @escaping () -> Void) {
         guard let screen = NSScreen.main else { return }
         if window != nil { return }
 
-        let width: CGFloat = 252
-        let height: CGFloat = 142
+        let width: CGFloat = 340
+        let height: CGFloat = 140
         let visible = screen.visibleFrame
-        let x = visible.maxX - width - 80
-        let y = visible.maxY - height - 56
+        let x = visible.maxX - width - 20
+        let y = visible.maxY - height - 12
 
-        let view = LaunchHUDView(onDismiss: { [weak self] in
-            self?.dismiss()
-            onDismiss()
-        })
+        let view = LaunchHUDView(
+            onFound: { [weak self] in
+                self?.dismiss()
+                onFound()
+            },
+            onCantFind: { [weak self] in
+                self?.dismiss()
+                onCantFind()
+            }
+        )
 
         let panel = NSPanel(
-            contentRect: NSRect(x: x, y: y, width: width, height: height + 50),
+            contentRect: NSRect(x: x, y: y, width: width, height: height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -35,7 +41,7 @@ final class LaunchHUDWindowController {
         panel.appearance = NSApp.effectiveAppearance
 
         let hosting = NSHostingView(rootView: view)
-        hosting.frame = NSRect(x: 0, y: 0, width: width, height: height + 50)
+        hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
         hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
 
@@ -62,4 +68,14 @@ final class LaunchHUDWindowController {
     }
 
     var isShowing: Bool { window != nil }
+
+    func showCantFindAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Looking for TMEject"
+        alert.informativeText = "TMEject's icon usually appears on the right side of your menu bar. If it's hidden, check Control Center or a third-party menu bar manager like Bartender or iBar."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        _ = alert.runModal()
+    }
 }
