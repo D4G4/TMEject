@@ -106,8 +106,11 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
                                                 presenter: presenter, unmount: FakeUnmountBridge())
         await coord.deliverForTesting(.backupBegan)
         try? await Task.sleep(nanoseconds: 20_000_000)
-        XCTAssertEqual(presenter.presented,
-                       [FakeToastPresenter.Presented(level: .info, message: "Backup started")])
+        // Title enriched to "Backing up…" per the design pass (was the raw "Backup started"
+        // before). Subtitle varies by auto-eject state; assert via title + kind only.
+        XCTAssertEqual(presenter.presented.count, 1)
+        XCTAssertEqual(presenter.presented.first?.message, "Backing up…")
+        XCTAssertEqual(presenter.presented.first?.kind, .busy)
     }
 
     func testToastSuppressedWhenDisabled() async {

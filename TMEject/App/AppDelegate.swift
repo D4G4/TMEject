@@ -26,8 +26,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         presentLaunchSurfacesIfNeeded()
         TMEjectUpdater.shared.checkForUpdatesInBackgroundAfterLaunchSettle()
 
-        // Catch "user switched to System Settings, granted FDA, switched back" — the
-        // didBecomeActive notification fires; refreshFDAState is debounced so this is cheap.
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -35,25 +33,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.coordinator.refreshFDAState()
+                self?.coordinator.refreshDrivePresence()
             }
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         TMEjectLog.app.info("applicationWillTerminate")
-        // The `.appWillTerminate` state-machine event is what produces the .ejecting warning
-        // surface (Decision #10 — `showQuitDuringEjectWarning`). Without delivering it here,
-        // that warning is dead code in production.
         Task {
             await coordinator.dispatch(.appWillTerminate)
             await coordinator.stop()
         }
-        // TODO(Step-15 polish): switch to `applicationShouldTerminate` returning .terminateLater
-        // so the warning can render and the user can confirm before shutdown completes.
     }
 
-    /// macOS routes Dock-icon clicks (and re-opens) through this. We use it to bring any
-    /// surfaced setup window back to the front in case the user lost it behind something.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         for win in NSApp.windows where win.identifier == .tmejectSetupWindow {
             win.makeKeyAndOrderFront(nil)
@@ -64,22 +56,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     // MARK: - Launch UX
 
+    func dismissLaunchHUDIfNeeded() {
+        guard launchHUD.isShowing else { return }
+        launchHUD.dismiss()
+        UserDefaults.standard.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    /// Default flow is **Onboarding A** (HUD-only). The modal explainer is only shown when
+    /// the user explicitly resets onboarding from Settings → Troubleshooting (which sets
+    /// `forceOnboardingModal=true`).
     private func presentLaunchSurfacesIfNeeded() {
         let defaults = UserDefaults.standard
         let didOnboarding = defaults.bool(forKey: SettingsKey.hasCompletedOnboarding)
         let didHUD       = defaults.bool(forKey: SettingsKey.hasSeenLaunchHUD)
+        let forceModal   = defaults.bool(forKey: SettingsKey.forceOnboardingModal)
 
-        if !didOnboarding {
-            UIActionLogger.onboardingStep("not completed — opening onboarding")
+        if forceModal {
+            UIActionLogger.onboardingStep("force modal requested — opening modal")
+            defaults.set(false, forKey: SettingsKey.forceOnboardingModal)
             onboarding.show(coordinator: coordinator) { [weak self] in
                 defaults.set(true, forKey: SettingsKey.hasCompletedOnboarding)
                 self?.presentLaunchHUDIfNeeded()
             }
-        } else if !didHUD {
-            // Onboarding was completed (or skipped via Reset) but HUD never confirmed.
+            return
+        }
+
+        if !didOnboarding {
+            // Onboarding A — set the flag immediately, just show the HUD. The HUD is
+            // self-explanatory and dismisses on first popover open.
+            UIActionLogger.onboardingStep("first launch — HUD only (Onboarding A)")
+            defaults.set(true, forKey: SettingsKey.hasCompletedOnboarding)
+        }
+
+        if !didHUD {
             presentLaunchHUDIfNeeded()
         } else {
-            // Drop back to .accessory now that there's no foreground UI.
             NSApp.setActivationPolicy(.accessory)
         }
     }
@@ -87,19 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private func presentLaunchHUDIfNeeded() {
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: SettingsKey.hasSeenLaunchHUD) { return }
-        launchHUD.show(
-            onFound: { [weak self] in
-                defaults.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
-                NSApp.setActivationPolicy(.accessory)
-                self?.coordinator.requestPokeNow()
-            },
-            onCantFind: { [weak self] in
-                self?.launchHUD.showCantFindHelp()
-                // Counts as seen so we don't keep nagging — user has been pointed at the
-                // System Settings remediation.
-                defaults.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
-                NSApp.setActivationPolicy(.accessory)
-            }
-        )
+        launchHUD.show(onDismiss: { [weak self] in
+            defaults.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
+            NSApp.setActivationPolicy(.accessory)
+            self?.coordinator.requestPokeNow()
+        })
     }
 }

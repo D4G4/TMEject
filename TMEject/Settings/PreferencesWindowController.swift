@@ -11,15 +11,15 @@ final class PreferencesWindowController {
         self.coordinator = coordinator
     }
 
-    func show(initialTab: SettingsTab = .general) {
+    func show() {
         guard let coordinator else { return }
-        TMEjectLog.ui.info("Preferences.show (initialTab=\(initialTab.label))")
+        TMEjectLog.ui.info("Preferences.show")
         if let win = window, win.isVisible {
             win.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
         }
-        let view = SettingsView(coordinator: coordinator, initialTab: initialTab)
+        let view = SettingsView(coordinator: coordinator)
         let win = NSWindow.makeSetupWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 400),
             title: "TMEject Settings"

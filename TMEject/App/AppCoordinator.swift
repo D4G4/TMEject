@@ -8,11 +8,50 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var lastToast: ToastMessage?
     @Published private(set) var loginItemStatus: LoginItemStatus = .notRegistered
     @Published private(set) var fdaState: FDAState = .unknown
+    @Published private(set) var backupPct: Double = 0
+    @Published private(set) var ejectPct: Double = 0
+    @Published private(set) var ejectAttempt: Int = 0
+    @Published private(set) var drivePresent: Bool = false
+    @Published private(set) var driveName: String?
+    @Published private(set) var lastBackupCompletedAt: Date?
+    /// Popover overlay state for the Eject & Lock ritual confirmation. nil → no overlay.
+    /// 0…100 — the inner ring fills as the confirmation runs out.
+    @Published var ritualConfirmPct: Double?
 
-    struct ToastMessage: Equatable {
+    struct ToastMessage: Equatable, Identifiable {
         let level: AppCommand.ToastLevel
         let text: String
+        let subtitle: String?
+        let kind: ToastKind
+        let actionLabel: String?
         let id: UUID = UUID()
+
+        init(level: AppCommand.ToastLevel,
+             text: String,
+             subtitle: String? = nil,
+             kind: ToastKind? = nil,
+             actionLabel: String? = nil) {
+            self.level = level
+            self.text = text
+            self.subtitle = subtitle
+            self.kind = kind ?? ToastKind.fromLevel(level)
+            self.actionLabel = actionLabel
+        }
+    }
+
+    /// Extends ToastLevel with the design-pass kinds (busy, neutral) that don't map onto a
+    /// state-machine ToastLevel.
+    enum ToastKind: Sendable, Equatable {
+        case ok, err, busy, neutral
+
+        static func fromLevel(_ level: AppCommand.ToastLevel) -> ToastKind {
+            switch level {
+            case .info:    return .neutral
+            case .success: return .ok
+            case .warning: return .err     // soft fold — warnings render in the err palette
+            case .error:   return .err
+            }
+        }
     }
 
     private var machine = StateMachine()
@@ -68,6 +107,11 @@ final class AppCoordinator: ObservableObject {
 
         if defaults.object(forKey: Self.toastsEnabledKey) == nil {
             defaults.set(true, forKey: Self.toastsEnabledKey)
+        }
+        // Per the design pass (Step 12.7): auto-eject defaults ON. The hourly-backup-trap
+        // warning lives in the Settings cooldown copy + docs/architecture.md.
+        if defaults.object(forKey: SettingsKey.autoEjectEnabled) == nil {
+            defaults.set(true, forKey: SettingsKey.autoEjectEnabled)
         }
         self.loginItemStatus = loginItem.currentStatus()
         defaults.set(self.loginItemStatus == .enabled, forKey: SettingsKey.launchAtLogin)
@@ -175,12 +219,45 @@ final class AppCoordinator: ObservableObject {
 
         Task { await self.restoreFromRelaunchIfNeeded() }
         refreshFDAState(force: true)
+        refreshDrivePresence()
 
-        let observer = PollingObserver(tmutil: tmutil, emit: { [weak self] event in
-            await self?.deliver(event)
-        })
+        let observer = PollingObserver(
+            tmutil: tmutil,
+            emit: { [weak self] event in
+                await self?.deliver(event)
+            },
+            onStatus: { [weak self] status in
+                await self?.handleStatusSnapshot(status)
+            }
+        )
         self.observer = observer
         Task { await observer.start() }
+    }
+
+    /// Drive-presence is what gates the popover's primary CTA, so we refresh on the same
+    /// hooks as login-item + FDA: popover .onAppear, prefs .onAppear, app didBecomeActive.
+    func refreshDrivePresence() {
+        Task { @MainActor in
+            // destinationInfo doesn't need FDA, so this works even before the user grants it.
+            let infos = (try? await tmutil.destinationInfo()) ?? []
+            guard let dest = infos.first(where: { $0.lastDestination }) ?? infos.first else {
+                drivePresent = false
+                driveName = nil
+                return
+            }
+            driveName = dest.name
+            drivePresent = (resolver.resolve(destinationID: dest.id) != nil)
+        }
+    }
+
+    /// Bonus channel from PollingObserver that doesn't go through the state machine.
+    /// Used to update UI-only state: backupPct, drivePresent (cheap revalidation).
+    private func handleStatusSnapshot(_ status: StatusPlist) {
+        if let pct = status.percent, pct >= 0 {
+            backupPct = pct * 100
+        } else if !status.running {
+            backupPct = 0
+        }
     }
 
     func stop() async {
@@ -206,6 +283,40 @@ final class AppCoordinator: ObservableObject {
     func requestEjectAndLock() {
         UIActionLogger.logAction("Request: Eject & Lock", context: "state=\(state)")
         Task { await self.runEjectAndLock() }
+    }
+
+    private var ritualTask: Task<Void, Never>?
+    private static let ritualDurationSeconds: TimeInterval = 1.8
+
+    /// Click "Eject & Lock" in the new popover → start the 1.8s ritual confirmation overlay.
+    /// During the countdown the user can press Cancel. At t=1.8s the overlay dismisses and
+    /// the existing `requestEjectAndLock` flow runs.
+    func startEjectAndLockRitual() {
+        guard ritualTask == nil else { return }
+        UIActionLogger.logAction("Ritual confirm start", context: "state=\(state)")
+        ritualConfirmPct = 0
+        let start = clock.now()
+        let theClock = clock
+        ritualTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                let elapsed = theClock.now() - start
+                if elapsed >= Self.ritualDurationSeconds { break }
+                self.ritualConfirmPct = min(100, max(0, elapsed / Self.ritualDurationSeconds * 100))
+                try? await Task.sleep(nanoseconds: 33_000_000)
+            }
+            if Task.isCancelled { return }
+            self.ritualConfirmPct = nil
+            self.ritualTask = nil
+            self.requestEjectAndLock()
+        }
+    }
+
+    func cancelEjectAndLockRitual() {
+        UIActionLogger.logAction("Ritual confirm cancelled")
+        ritualTask?.cancel()
+        ritualTask = nil
+        ritualConfirmPct = nil
     }
 
     var isManualEjectAllowed: Bool {
@@ -294,10 +405,14 @@ final class AppCoordinator: ObservableObject {
             // plumbing lands in Step 10/11; for now we just log.
             TMEjectLog.eject.info("signalBackupCompleted received — auto-eject OFF until Step 10/11")
         case .showToast(let level, let message):
-            lastToast = ToastMessage(level: level, text: message)
-            TMEjectLog.ui.info("Toast [\(level.rawValue)]: \(message)")
+            let enriched = enrichToast(level: level, message: message)
+            lastToast = enriched
+            TMEjectLog.ui.info("Toast [\(level.rawValue)]: \(enriched.text)")
             if toastsEnabled {
-                toastPresenter?.present(level: level, message: message)
+                toastPresenter?.present(level: level, message: enriched.text,
+                                         subtitle: enriched.subtitle,
+                                         kind: enriched.kind,
+                                         actionLabel: enriched.actionLabel)
             }
         case .notify(let title, let body):
             TMEjectLog.ui.info("Notify: \(title) — \(body)")
@@ -319,11 +434,15 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    /// Called by Ejector after each unmount attempt. We surface the holder + retry countdown
-    /// in `lastError` so the menu bar reflects progress mid-9-min retry window. The state
-    /// machine does NOT see this — it's a coordinator-side UI update only; state stays
-    /// `.ejecting` until the final report.
+    /// Called by Ejector after each unmount attempt. Surfaces holder + retry countdown in
+    /// `lastError` mid-9-min retry window. Also updates the UI-only `ejectPct` /
+    /// `ejectAttempt` published values for the menu bar ring + popover. State machine does
+    /// NOT see this; state stays `.ejecting` until the final report.
     private func handleEjectProgress(_ attempt: EjectAttempt) {
+        ejectAttempt = attempt.attemptNumber
+        // Linear approximation — attempts done / total. The user sees motion that matches
+        // perceived progress, even though the real underlying signal is discrete.
+        ejectPct = Double(attempt.attemptNumber) / Double(attempt.totalAttempts) * 100
         switch attempt.result {
         case .success, .other:
             // Final success / non-retryable failure — the EjectReport drives the eventual
@@ -349,6 +468,57 @@ final class AppCoordinator: ObservableObject {
     /// `.appWillTerminate`).
     func dispatch(_ event: AppEvent) async {
         await deliver(event)
+    }
+
+    /// Maps the state-machine's lean `.showToast(level, message)` to the design-pass-rich
+    /// (title, subtitle, kind, action) shape. Subtitle / kind / action are derived from the
+    /// current coordinator state — keeps the state machine free of UI concerns.
+    private func enrichToast(level: AppCommand.ToastLevel, message: String) -> ToastMessage {
+        let autoOn = defaults.bool(forKey: SettingsKey.autoEjectEnabled)
+        let drive  = driveName ?? "Backup Drive"
+        switch message {
+        case "Backup started":
+            return ToastMessage(
+                level: level,
+                text: "Backing up…",
+                subtitle: autoOn ? "TMEject will eject when it's done"
+                                 : "Time Machine is writing to \(drive)",
+                kind: .busy
+            )
+        case "Backup complete":
+            return ToastMessage(
+                level: level,
+                text: "Backup complete",
+                subtitle: autoOn ? "Ejecting \(drive)…"
+                                 : "\(drive) is safe to keep connected",
+                kind: .ok
+            )
+        case "Drive ejected":
+            return ToastMessage(
+                level: level,
+                text: "\(drive) ejected",
+                subtitle: "Safe to unplug",
+                kind: .ok
+            )
+        case let m where m.hasPrefix("Eject failed"):
+            return ToastMessage(
+                level: level,
+                text: "Eject failed",
+                subtitle: lastError,
+                kind: .err,
+                actionLabel: "Retry"
+            )
+        case "Backup stopped",
+             "Backup ended without a new snapshot":
+            return ToastMessage(
+                level: level,
+                text: "Backup didn't complete",
+                subtitle: "TMEject will not eject",
+                kind: .err
+            )
+        default:
+            return ToastMessage(level: level, text: message)
+        }
     }
 
     private func categorize(title: String) -> NotificationCategory {

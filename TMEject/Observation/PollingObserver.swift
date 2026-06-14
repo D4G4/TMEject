@@ -14,6 +14,10 @@ actor PollingObserver {
     private let tmutil: TMUtilClient
     private let clock: MonotonicClock
     private let emit: @Sendable (AppEvent) async -> Void
+    /// Bonus channel — every poll's StatusPlist (whether or not it triggered a state-machine
+    /// event). Used by the coordinator for UI-only updates (backupPct, drivePresent revalidation).
+    /// The state machine is fed by `emit` only; this channel must never drive transitions.
+    private let onStatus: @Sendable (StatusPlist) async -> Void
     private var task: Task<Void, Never>?
 
     // Initial state implies "TM is idle, never seen running." A mid-running backup at launch
@@ -32,10 +36,12 @@ actor PollingObserver {
     private var confirmingStartedAt: TimeInterval?
 
     init(tmutil: TMUtilClient, clock: MonotonicClock = SystemClock(),
-         emit: @escaping @Sendable (AppEvent) async -> Void) {
+         emit: @escaping @Sendable (AppEvent) async -> Void,
+         onStatus: @escaping @Sendable (StatusPlist) async -> Void = { _ in }) {
         self.tmutil = tmutil
         self.clock = clock
         self.emit = emit
+        self.onStatus = onStatus
     }
 
     func start() {
@@ -88,6 +94,7 @@ actor PollingObserver {
             TMEjectLog.observer.error("tmutil status failed: \(error)")
             return
         }
+        await onStatus(status)
 
         let phase = BackupPhaseKind.classify(status.backupPhase)
         let now = clock.now()

@@ -75,12 +75,14 @@ final class AutoEjectGuardTests: XCTestCase {
         let coord = makeCoordinator(fdaState: .denied, notifier: notifier)
         coord.refreshFDAState(force: true)
         try? await Task.sleep(nanoseconds: 50_000_000)
-        // Auto-eject OFF → functional is true (no requirement violated).
-        XCTAssertTrue(coord.isAutoEjectFunctional)
+        // Step 12.7 changed the auto-eject default from OFF to ON, so the constructor
+        // already set the key; flip it OFF explicitly to verify the OFF branch.
+        coord.setAutoEjectEnabled(false)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(coord.isAutoEjectFunctional, "Auto-eject OFF → functional regardless of FDA")
         coord.setAutoEjectEnabled(true)
         try? await Task.sleep(nanoseconds: 50_000_000)
-        // Auto-eject ON + FDA denied → not functional.
-        XCTAssertFalse(coord.isAutoEjectFunctional)
+        XCTAssertFalse(coord.isAutoEjectFunctional, "Auto-eject ON + FDA denied → not functional")
     }
 
     func testFDADeniedNotification_RateLimited() async {

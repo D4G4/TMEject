@@ -8,14 +8,13 @@ final class OnboardingWindowController {
 
     func show(coordinator: AppCoordinator, onComplete: @escaping () -> Void) {
         guard let screen = NSScreen.main else { return }
-
         if let win = window, win.isVisible {
             win.makeKeyAndOrderFront(nil)
             return
         }
 
-        let width: CGFloat = 640
-        let height: CGFloat = 460
+        let width: CGFloat = 420
+        let height: CGFloat = 420
         let visible = screen.visibleFrame
         let frame = NSRect(
             x: visible.midX - width / 2,
@@ -28,19 +27,26 @@ final class OnboardingWindowController {
             onComplete()
         })
 
-        let win = NSWindow.makeSetupWindow(contentRect: frame, title: "Welcome to TMEject")
+        let win = NSPanel(
+            contentRect: frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        win.isReleasedWhenClosed = false
+        win.isOpaque = false
+        win.backgroundColor = .clear
         win.hasShadow = true
-        win.contentView = NSHostingView(rootView: view)
-
-        // Closing onboarding without finishing it should not silently put the user in a half-set-up
-        // state. We quit — same as Blink's onboarding. The Settings → Advanced → Reset Onboarding
-        // button gets the user back here on next launch.
-        let close = SetupWindowCloseDelegate { NSApp.terminate(nil) }
-        win.delegate = close
-        self.closeDelegate = close
+        win.level = .modalPanel
+        win.identifier = .tmejectSetupWindow
+        let hosting = NSHostingView(rootView: view.frame(width: width))
+        hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        hosting.autoresizingMask = [.width, .height]
+        win.contentView = hosting
 
         NSApp.setActivationPolicy(.regular)
-        win.surfaceAtLaunch()
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate()
         UIActionLogger.windowOpened("Onboarding")
 
         self.window = win
@@ -55,8 +61,6 @@ final class OnboardingWindowController {
         }, completionHandler: { [weak self] in
             win.orderOut(nil)
             self?.window = nil
-            // Step 11 hands off to the Launch HUD; activation policy stays .regular until
-            // the HUD dismisses too.
         })
     }
 }

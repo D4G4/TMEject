@@ -180,6 +180,15 @@ a future release, `lockScreen()` returns `.binaryMissing` distinctly so we can
 surface "screen lock unavailable on this OS version" rather than silently
 failing.
 
+### Defaults rationale: auto-eject is ON
+
+The initial design (locked Architecture Decision #7) defaulted auto-eject to OFF. The
+Step 12.7 design pass flipped it to ON per user request — TMEject's value prop is the
+auto-eject; defaulting it OFF made the app feel inert on first run. The hourly-backup
+trap is now mitigated only by the cooldown (default 30 min). Users running hourly TM
+should raise the cooldown to 90+ min in Settings to avoid the next backup failing
+because the drive ejected.
+
 ### Apple's Sandbox would block too much; we ship unsandboxed
 
 DiskArbitration `DADiskUnmount` from inside an App Sandbox container requires

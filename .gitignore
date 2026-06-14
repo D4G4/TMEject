@@ -56,3 +56,6 @@ features/
 *.swo
 .env
 .env.local
+
+# Design reference bundle — local-only, never committed
+design-reference/

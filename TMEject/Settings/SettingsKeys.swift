@@ -13,6 +13,7 @@ enum SettingsKey {
     static let betaChannel             = "co.dls.tmeject.betaChannel"
     static let preConfirmLatestBackup  = "co.dls.tmeject.preConfirmLatestBackupPath"
     static let launchAtLogin           = "co.dls.tmeject.launchAtLogin"     // @AppStorage mirror
+    static let forceOnboardingModal    = "co.dls.tmeject.forceOnboardingModal"   // Set by Reset Onboarding
 }
 
 enum CooldownOption: Int, CaseIterable, Identifiable {

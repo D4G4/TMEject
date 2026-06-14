@@ -44,9 +44,17 @@ final class FakeToastPresenter: ToastPresenter {
     struct Presented: Equatable {
         let level: AppCommand.ToastLevel
         let message: String
+        let subtitle: String?
+        let kind: AppCoordinator.ToastKind
+        let actionLabel: String?
     }
     private(set) var presented: [Presented] = []
-    func present(level: AppCommand.ToastLevel, message: String) {
-        presented.append(Presented(level: level, message: message))
+    func present(level: AppCommand.ToastLevel,
+                 message: String,
+                 subtitle: String?,
+                 kind: AppCoordinator.ToastKind,
+                 actionLabel: String?) {
+        presented.append(Presented(level: level, message: message, subtitle: subtitle,
+                                    kind: kind, actionLabel: actionLabel))
     }
 }
