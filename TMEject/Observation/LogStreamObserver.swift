@@ -100,6 +100,8 @@ actor LogStreamObserver {
         let summary = LogEventSummary(rawDict: obj)
 
         if Self.discoveryModeEnabled {
+            // Log every parsed event so future re-verifications can capture the full stream
+            // for KnownLogEvents matching.
             TMEjectLog.observer.info(
                 "log-event ts=\(summary.timestamp ?? "?") subsystem=\(summary.subsystem ?? "?") "
                     + "category=\(summary.category ?? "?") process=\(summary.processName ?? "?") "
@@ -107,6 +109,15 @@ actor LogStreamObserver {
             )
         }
 
+        // In production, only specific known-good events nudge the poller. Filters out
+        // ~99% XPC-connection noise that would otherwise debounce-collapse to one wake per
+        // second indefinitely. Discovery mode keeps the per-event log lines above for
+        // future capture but ALSO routes through the same filter — keeps both code paths
+        // exercising the same decision.
+        guard KnownLogEvents.isWakeWorthy(summary) else { return }
+        TMEjectLog.observer.debug(
+            "wake-worthy log-event: \(summary.category ?? "?") — \(summary.eventMessage ?? "?")"
+        )
         await maybeFireWake()
     }
 

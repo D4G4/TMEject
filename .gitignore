@@ -36,6 +36,9 @@ Packages/
 # Sparkle release artifacts (never commit signed builds)
 releases/
 *.zip
+*.dmg
+site/downloads/*.dmg
+site/downloads/*.dmg.sig
 
 # Notarization secrets
 .notarytool-credentials
@@ -63,3 +66,4 @@ design-reference/
 # Snapshot test failure artifacts (commit baselines under __Snapshots__/, not these)
 TMEjectSnapshotTests/__Snapshots__/*.actual.png
 TMEjectSnapshotTests/__Snapshots__/__Failures__/
+/site-reference/

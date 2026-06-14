@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TMEject Sparkle appcast — placeholder.
+
+  The release script (`scripts/release.sh`) replaces this file on every
+  signed/notarized build. Until the first release ships, the <item> list is
+  empty so Sparkle treats the install as up-to-date (no spurious "update
+  available" prompts on dev builds).
+
+  When editing by hand:
+    - Versions are bare integers (CFBundleVersion), e.g. 42.
+    - Short versions are user-facing, e.g. "1.0.0".
+    - The sparkle:edSignature attribute must be produced by `sign_update`
+      from the Sparkle 2.x tools using the EdDSA private key in the keychain.
+    - minimumSystemVersion mirrors the app's LSMinimumSystemVersion (14.0).
+-->
+<rss version="2.0"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>TMEject</title>
+    <link>https://d4g4.github.io/TMEject/appcast.xml</link>
+    <description>TMEject release feed</description>
+    <language>en</language>
+    <!-- No <item> entries yet — first release will populate this. -->
+  </channel>
+</rss>

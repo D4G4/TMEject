@@ -51,6 +51,24 @@ Tests run headless (no window server needed); the few that exercise UI paths
 inject fakes for the screen-lock binary, the confirm dialog, and the toast
 presenter.
 
+## Website
+
+Marketing + distribution lives at <https://d4g4.github.io/TMEject/>, built from
+[`site/`](site/) and deployed via GitHub Pages (`main` branch, `/site` folder).
+The page is plain HTML/CSS — no build step, no analytics, no third-party
+scripts, no network fonts — and matches the app's design tokens (system font,
+ritual teal accent, light + dark via `prefers-color-scheme`).
+
+To preview locally:
+
+```
+python3 -m http.server -d site
+```
+
+The downloadable DMG drops at `site/downloads/TMEject-latest.dmg` and the
+Sparkle feed at `site/appcast.xml`. See [`site/README.md`](site/README.md) for
+the per-release update procedure.
+
 ## Release
 
 Signed/notarized releases use `scripts/release.sh`. One-time setup

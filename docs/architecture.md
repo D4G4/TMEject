@@ -121,6 +121,40 @@ Things that work differently on macOS 26 (Tahoe) than the documented contract
 or than older macOS releases. Re-verify each of these on the next major OS
 update — they're the most likely places to break.
 
+### Snapshot path is written BEFORE TMEject's first confirming-phase poll on macOS 26.3.1
+
+> **Known bug — fix tracked separately, not yet landed.** Empirically observed during the
+> Step 13 discovery backup on 2026-06-14.
+
+The locked Decision #3 says success is detected by `tmutil latestbackup` snapshot path
+advancing across the confirming-phase entry/exit. The assumption was that the new snapshot
+URL gets committed DURING the confirming phase, so a poll at confirming-entry returns the
+PRIOR snapshot URL and a poll at confirming-exit returns the NEW one.
+
+On macOS 26.3.1 the snapshot is committed BEFORE TMEject's first observation of the
+confirming phase. Real trace from the discovery backup:
+
+- 14:51:22.246 `[DeferredSizing] Skipping further sizing for finished volume`
+- 14:51:22.358 `[BackupEngine] Completing backup`
+- 14:51:22.857 `[TMSession] Finishing session for '/Volumes/Daksh's Time Machine'`
+- 14:51:22.858 — TMEject sees `BackupPhase != Copying` for the first time → emits
+  `confirmingEntered`, captures latestbackup path → `…/2026-06-14-145122.backup`
+- 14:51:22.894 `[BackupEngine] Successfully completed backing up 205.7 MB to
+  '/Volumes/.timemachine/.../2026-06-14-145122.backup'`
+- 14:51:24.667 — TMEject sees `Running=false` → emits `confirmingExited`, captures
+  latestbackup path → SAME `…/2026-06-14-145122.backup`
+- State machine: prior == new → false cancellation → no `signalBackupCompleted` →
+  no auto-eject
+
+**Pending fix** (not yet implemented): capture the latestbackup baseline at `backupBegan`
+(or earlier, e.g. at coordinator launch) and use that as the comparison value at
+`confirmingExited`. The state machine's existing probe-failure handling continues to apply.
+
+Until that lands, auto-eject is effectively broken for backups that take less than the
+poll interval to traverse the confirming phase (which appears to be all of them on Tahoe).
+The state machine is FUNCTIONING correctly per its current rules — the rule itself needs
+to change.
+
 ### `NSDistributedNotificationCenter` wildcard observers are dead since macOS 10.15
 
 Original plan was to subscribe to backupd's distributed notifications via

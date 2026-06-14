@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TMEject — eject your Time Machine drive, automatically</title>
+<meta name="description" content="A quiet macOS menu bar utility that ejects your Time Machine drive the moment a backup finishes — and locks your screen on the way out." />
+<meta name="theme-color" content="#09090b" />
+<link rel="icon" type="image/png" href="assets/icon.png" />
+<link rel="apple-touch-icon" href="assets/icon.png" />
+<link rel="alternate" type="application/rss+xml" title="TMEject updates" href="appcast.xml" />
+<link rel="stylesheet" href="style.css" />
+<style>
+  /* ===== Paged mode: one full screen per section, snap on space/arrows ===== */
+  html.paged { scroll-snap-type: y mandatory; scroll-padding-top: 0; }
+  @media (prefers-reduced-motion: reduce) { html.paged { scroll-snap-type: none; } }
+
+  .page {
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; flex-direction: column; justify-content: center;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    position: relative; padding: 90px 0 52px; overflow: hidden;
+  }
+  .page > .wrap { width: 100%; }
+
+  /* hero: two columns so headline + product shot share one screen */
+  .page-hero .wrap { display: grid; grid-template-columns: 1.04fr 0.96fr; gap: clamp(32px, 5vw, 72px); align-items: center; }
+  .page-hero .hero-head { max-width: none; }
+  .page-hero .hero h1 { font-size: clamp(38px, 4.4vw, 62px); }
+  .page-hero .hero-lead { font-size: clamp(16px, 1.5vw, 18px); margin-top: 20px; }
+  .page-hero .hero-cta { margin-top: 28px; }
+  .page-hero .shot { margin-top: 0; }
+  .page-hero .desk { height: min(58vh, 460px); }
+
+  /* ritual */
+  .page-ritual .ritual-grid { width: 100%; }
+
+  /* features — keep the row inside one screen */
+  .page-features .feat-head { margin-bottom: clamp(20px, 3vh, 40px); }
+  .page-features .feat-head h2 { font-size: clamp(26px, 3.2vw, 40px); }
+  .page-features .feat-head p { font-size: 15.5px; margin-top: 14px; }
+  .page-features .feat-card { padding: 18px 20px 20px; }
+  .page-features .feat-ico { width: 34px; height: 34px; margin-bottom: 14px; }
+  .page-features .feat-card h3 { font-size: 16px; }
+  .page-features .feat-card p { font-size: 13.5px; margin-top: 8px; }
+  .page-features .feat-card .tag { margin-top: 12px; }
+
+  /* download page carries the footer pinned to the bottom */
+  .page-download { justify-content: center; }
+  .page-download .footer { position: absolute; left: 0; right: 0; bottom: 0; border-top: 0.5px solid var(--line); }
+
+  /* page dots */
+  .pagedots { position: fixed; right: 22px; top: 50%; transform: translateY(-50%); z-index: 45; display: flex; flex-direction: column; gap: 14px; }
+  .pagedots a { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,0.22); transition: background 0.2s, transform 0.2s; }
+  .pagedots a:hover { background: rgba(255,255,255,0.45); }
+  .pagedots a.active { background: var(--ritual); transform: scale(1.3); }
+
+  @media (max-width: 880px) {
+    html.paged { scroll-snap-type: none; }
+    .page { min-height: auto; padding: 88px 0 60px; overflow: visible; }
+    .page-hero .wrap { grid-template-columns: 1fr; }
+    .page-hero .desk { height: auto; aspect-ratio: 16/10; }
+    .page-download .footer { position: static; margin-top: 56px; }
+    .pagedots { display: none; }
+  }
+</style>
+<script>document.documentElement.className = 'js paged';</script>
+</head>
+<body>
+
+<a class="skip-link" href="#hero">Skip to content</a>
+
+<!-- ============================================================ NAV -->
+<nav class="nav" id="nav" aria-label="Primary">
+  <div class="wrap">
+    <a class="brand" href="#hero">
+      <span class="mark" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg>
+      </span>
+      TMEject
+    </a>
+    <div class="nav-links">
+      <a class="nav-link" href="#ritual">The ritual</a>
+      <a class="nav-link" href="#features">Features</a>
+      <a class="nav-link" href="#states">How it works</a>
+      <a class="btn btn-ghost btn-sm" href="#download">Download</a>
+    </div>
+  </div>
+</nav>
+
+<!-- page dots -->
+<nav class="pagedots" aria-label="Page navigation">
+  <a href="#hero" class="active" aria-label="Top"></a>
+  <a href="#ritual" aria-label="The ritual"></a>
+  <a href="#features" aria-label="Features"></a>
+  <a href="#states" aria-label="How it works"></a>
+  <a href="#download" aria-label="Download"></a>
+</nav>
+
+<main>
+
+<!-- ============================================================ HERO -->
+<section class="page page-hero" id="hero" aria-labelledby="hero-title">
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="hero-head reveal">
+      <div class="eyebrow">macOS menu bar utility</div>
+      <h1 id="hero-title">Back up.<br/>Walk away. <span class="muted">Safely.</span></h1>
+      <p class="hero-lead">TMEject ejects your Time Machine drive the instant a backup finishes — so it&rsquo;s always safe to pull the cable. And when you stand up to leave, one keystroke ejects the drive and locks your screen.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="downloads/TMEject-latest.dmg" id="download-hero">
+          <span class="dl-ico" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M9 2.5V11M9 11 5.5 7.5M9 11l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 13.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+          Download for Mac
+        </a>
+        <a class="btn btn-ghost" href="#ritual">See the ritual</a>
+      </div>
+      <div class="hero-meta">
+        <span>macOS 14+ (Sonoma, Sequoia, Tahoe)</span><span class="dot"></span>
+        <span>Universal</span><span class="dot"></span>
+        <span>Time Machine drive required</span>
+      </div>
+    </div>
+
+    <!-- product shot -->
+    <div class="shot reveal" aria-hidden="true">
+      <div class="desk">
+        <div class="desk-bar">
+          <div class="l"><span class="b">Finder</span><span>File</span><span>Edit</span><span>View</span></div>
+          <div class="r">
+            <svg width="20" height="13" viewBox="0 0 26 14" fill="none" opacity="0.85"><rect x="1" y="3" width="20" height="8" rx="2.2" stroke="#fff" stroke-width="1.1" opacity="0.55"/><rect x="2.6" y="4.6" width="13" height="4.8" rx="1" fill="#fff"/><rect x="22.4" y="5.4" width="1.6" height="3.2" rx="0.8" fill="#fff" opacity="0.55"/></svg>
+            <svg width="15" height="13" viewBox="0 0 18 14" fill="none" opacity="0.85"><circle cx="9" cy="10.6" r="1.3" fill="#fff"/><path d="M5.2 7.4a5.4 5.4 0 0 1 7.6 0" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><path d="M3 5.1a8.6 8.6 0 0 1 12 0" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>
+            <span class="tme">
+              <svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="#fff"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="#fff"/></svg>
+            </span>
+            <span class="clock">Thu 2:14 PM</span>
+          </div>
+        </div>
+
+        <!-- popover B -->
+        <div class="pop">
+          <div class="pop-arrow"></div>
+          <span class="pop-gear">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 5.4A2.6 2.6 0 1 0 8 10.6 2.6 2.6 0 0 0 8 5.4Zm0 1.5a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z" fill="currentColor"/><path d="M7 1h2l.3 1.6a5.5 5.5 0 0 1 1.3.55l1.4-.9 1.4 1.4-.9 1.4q.34.6.55 1.3L14.6 7v2l-1.6.3a5.5 5.5 0 0 1-.55 1.3l.9 1.4-1.4 1.4-1.4-.9q-.6.34-1.3.55L9 14.6H7l-.3-1.6a5.5 5.5 0 0 1-1.3-.55l-1.4.9-1.4-1.4.9-1.4a5.5 5.5 0 0 1-.55-1.3L1.4 9V7l1.6-.3q.21-.7.55-1.3l-.9-1.4 1.4-1.4 1.4.9q.6-.34 1.3-.55L7 1Z" fill="currentColor" opacity="0.9"/></svg>
+          </span>
+          <div class="pop-hero">
+            <div class="hero-disc">
+              <div class="disc"></div>
+              <span class="g">
+                <svg width="28" height="28" viewBox="0 0 20 20" fill="none"><rect x="3" y="5.5" width="14" height="9" rx="2.2" stroke="currentColor" stroke-width="1.5"/><circle cx="13.5" cy="10" r="1.1" fill="currentColor"/><rect x="6" y="9.2" width="3.5" height="1.6" rx="0.8" fill="currentColor"/></svg>
+              </span>
+            </div>
+            <div class="name">Backup Drive</div>
+            <div class="sub">Connected &middot; backed up 2:14 PM</div>
+          </div>
+          <div class="pop-actions">
+            <button class="ritual-btn" type="button">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7.2" rx="2" fill="currentColor"/><path d="M5 7V5.2a3 3 0 0 1 6 0V7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+              Eject &amp; Lock
+              <span class="keys"><kbd>&#8963;</kbd><kbd>&#8997;</kbd><kbd>&#8984;</kbd><kbd>E</kbd></span>
+            </button>
+            <div class="pop-row">
+              <span class="pop-quiet">Eject now</span>
+              <span class="pop-auto">Auto-eject <span class="switch"></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ RITUAL -->
+<section class="page page-ritual ritual-sec" id="ritual" aria-labelledby="ritual-title">
+  <div class="glow" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="ritual-grid">
+      <div class="ritual-copy reveal">
+        <div class="eyebrow">The ritual</div>
+        <h2 id="ritual-title">One keystroke for leaving your desk.</h2>
+        <p>You&rsquo;re unplugging the Thunderbolt monitor your drive is daisy-chained to, and walking away. Press the shortcut: TMEject ejects the drive, confirms it&rsquo;s safe, then locks your screen — a single, deliberate motion you can trust.</p>
+        <div class="shortcut-display" aria-label="Keyboard shortcut: Control Option Command E">
+          <span class="big-key">&#8963;</span>
+          <span class="big-key">&#8997;</span>
+          <span class="big-key">&#8984;</span>
+          <span class="big-key lett">E</span>
+        </div>
+        <div class="shortcut-cap">Rebindable. Or click <span style="color:var(--ritual)">Eject &amp; Lock</span> in the menu bar.</div>
+      </div>
+      <div class="ritual-vis reveal" aria-hidden="true">
+        <div class="confirm-card">
+          <div class="confirm-ring">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="30" stroke="rgba(127,127,127,0.25)" stroke-width="3"/><circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="188.5" stroke-dashoffset="56" transform="rotate(-90 32 32)"/></svg>
+            <span style="position:absolute"><svg width="24" height="24" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7.2" rx="2" fill="currentColor"/><path d="M5 7V5.2a3 3 0 0 1 6 0V7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></span>
+          </div>
+          <h3>Eject &amp; lock</h3>
+          <p>Backup Drive will be ejected,<br/>then your screen will lock.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ FEATURES -->
+<section class="page page-features" id="features" aria-labelledby="features-title">
+  <div class="wrap">
+    <div class="feat-head reveal">
+      <div class="eyebrow">What it does</div>
+      <h2 id="features-title">It does the right thing, then gets out of the way.</h2>
+      <p>No control panel. No dashboard. TMEject watches your backups and handles the drive — quietly, and correctly.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat-card accent reveal">
+        <div class="feat-ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></div>
+        <h3>Ejects when the backup&rsquo;s done</h3>
+        <p>The moment Time Machine finishes writing, TMEject verifies the backup and ejects the drive. No more &ldquo;the disk was not ejected properly.&rdquo;</p>
+        <span class="tag">Cooldown skips eject if a backup is due soon</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" aria-hidden="true"><svg width="19" height="19" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7.2" rx="2" fill="currentColor"/><path d="M5 7V5.2a3 3 0 0 1 6 0V7" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></div>
+        <h3>Quiet by design</h3>
+        <p>Lives in the menu bar — no Dock icon, no window. The glyph shows what it&rsquo;s doing at a glance, and says nothing at all when there&rsquo;s nothing to say.</p>
+        <span class="tag">Light &amp; dark · VoiceOver · color-blind safe</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" aria-hidden="true"><svg width="19" height="19" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="5.2" r="0.9" fill="currentColor"/><rect x="7.2" y="7" width="1.6" height="4.4" rx="0.8" fill="currentColor"/></svg></div>
+        <h3>Honest when something&rsquo;s wrong</h3>
+        <p>If Spotlight is still indexing and the eject can&rsquo;t complete, TMEject tells you plainly what&rsquo;s holding the drive — and lets you retry. No silent failures.</p>
+        <span class="tag">held by mds_stores (pid 412)</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ STATES -->
+<section class="page states-sec" id="states" aria-labelledby="states-title">
+  <div class="wrap">
+    <div class="states-head reveal">
+      <div class="eyebrow">The menu bar icon</div>
+      <h2 id="states-title">Five states. One glance.</h2>
+      <p>Every state reads from the icon itself — by shape and motion, not just color — so you always know where things stand.</p>
+    </div>
+    <div class="states-row">
+      <div class="state-item reveal">
+        <div class="state-icn" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></div>
+        <div><div class="state-name">Idle</div><div class="state-desc">Connected, nothing to do</div></div>
+      </div>
+      <div class="state-item reveal">
+        <div class="state-icn" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="rgba(127,127,127,0.3)" stroke-width="1.8"/><circle cx="12" cy="12" r="10" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="62.8" stroke-dashoffset="44" transform="rotate(-90 12 12)"/></svg>
+          <span style="position:absolute"><svg width="11" height="11" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+        </div>
+        <div><div class="state-name">Backing up</div><div class="state-desc">Time Machine is writing</div></div>
+      </div>
+      <div class="state-item reveal">
+        <div class="state-icn" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="var(--green)" stroke-width="1.8"/></svg>
+          <span style="position:absolute;color:var(--green)"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.4 8.4 6.6 11.4 12.6 4.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </div>
+        <div><div class="state-name">Confirming</div><div class="state-desc">Verifying success</div></div>
+      </div>
+      <div class="state-item reveal">
+        <div class="state-icn" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="rgba(127,127,127,0.3)" stroke-width="1.8"/><circle cx="12" cy="12" r="10" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="62.8" stroke-dashoffset="22" transform="rotate(-90 12 12)"/></svg>
+          <span style="position:absolute"><svg width="10" height="10" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+        </div>
+        <div><div class="state-name">Ejecting</div><div class="state-desc">Safely, with retries</div></div>
+      </div>
+      <div class="state-item reveal">
+        <div class="state-icn" aria-hidden="true">
+          <span style="opacity:0.5"><svg width="22" height="22" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+          <span style="position:absolute;right:2px;bottom:4px;color:var(--orange)"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 1.6 15 13.6H1L8 1.6Z" fill="currentColor"/><rect x="7.2" y="5.6" width="1.6" height="4" rx="0.8" fill="#1a1a1a"/><circle cx="8" cy="11.4" r="0.95" fill="#1a1a1a"/></svg></span>
+        </div>
+        <div><div class="state-name">Eject failed</div><div class="state-desc">Here&rsquo;s why &mdash; and retry</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ DOWNLOAD + FOOTER -->
+<section class="page page-download cta" id="download" aria-labelledby="download-title">
+  <div class="glow" aria-hidden="true"></div>
+  <div class="wrap cta-inner">
+    <div class="reveal">
+      <h2 id="download-title">Pull the cable with confidence.</h2>
+      <p>Lives in your menu bar. Gone from your mind.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="downloads/TMEject-latest.dmg" id="download-main">
+          <span class="dl-ico" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M9 2.5V11M9 11 5.5 7.5M9 11l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 13.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+          Download TMEject
+        </a>
+      </div>
+      <div class="cta-reqs">
+        <span>macOS 14+ (Sonoma, Sequoia, Tahoe)</span><span class="dot"></span>
+        <span>Universal binary</span><span class="dot"></span>
+        <span>Notarized by Apple</span><span class="dot"></span>
+        <span>Time Machine drive required</span>
+      </div>
+      <div class="cta-sub">
+        Auto-updates via <a href="appcast.xml">Sparkle</a> · Source on <a href="https://github.com/D4G4/TMEject">GitHub</a>
+      </div>
+    </div>
+  </div>
+  <footer class="footer">
+    <div class="wrap">
+      <a class="brand" href="#hero">
+        <span class="mark" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 18 18" fill="none"><path d="M9 3.2 14.4 10.2H3.6L9 3.2Z" fill="currentColor"/><rect x="3.6" y="12.1" width="10.8" height="2.1" rx="1" fill="currentColor"/></svg></span>
+        TMEject
+      </a>
+      <div class="foot-links">
+        <a href="#ritual">The ritual</a>
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="https://github.com/D4G4/TMEject">GitHub</a>
+        <a href="https://github.com/D4G4/TMEject/releases">Release notes</a>
+      </div>
+      <div class="foot-copy">&copy; <span id="year">2026</span> TMEject</div>
+    </div>
+  </footer>
+</section>
+
+</main>
+
+<script>
+  const nav = document.getElementById('nav');
+  const dots = [...document.querySelectorAll('.pagedots a')];
+  const pages = [...document.querySelectorAll('.page')];
+
+  // active page → dot highlight + nav background (solid past the hero)
+  const pageIO = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        const id = e.target.id;
+        dots.forEach(d => d.classList.toggle('active', d.getAttribute('href') === '#' + id));
+        nav.classList.toggle('scrolled', id !== 'hero');
+      }
+    });
+  }, { threshold: 0.55 });
+  pages.forEach(p => pageIO.observe(p));
+
+  // reveal content as each page comes in
+  const revealIO = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); revealIO.unobserve(e.target); } });
+  }, { rootMargin: '0px 0px -6% 0px', threshold: 0.08 });
+  document.querySelectorAll('.reveal').forEach((el, i) => {
+    el.style.transitionDelay = (Math.min(i % 3, 2) * 80) + 'ms';
+    revealIO.observe(el);
+  });
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

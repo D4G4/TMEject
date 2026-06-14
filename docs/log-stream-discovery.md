@@ -72,10 +72,41 @@ Discard noise (sandbox logs, dlopen tracing, etc.).
 
 ### 4. Confirmed events on macOS 26.3.1 (Tahoe)
 
-> **TBD — populate after the first Step 13 discovery backup.** This section will list the
-> `eventMessage` strings paired with the backup-lifecycle moment each fires. Codify them
-> in `Observation/KnownLogEvents.swift` as substring matchers — those are
-> state-machine-agnostic; they only nudge the poller.
+Captured 2026-06-14 via `tmutil startbackup --block` with `TMEJECT_LOG_DISCOVERY=1`. The
+backup produced 18 464 ndjson events in 87 seconds; 99 % were XPC connection-setup noise
+(`com.apple.xpc` subsystem). Only **424 events** landed under
+`subsystem == "com.apple.TimeMachine"`, and only a handful of those are state-defining.
+
+The substring matchers below are what `Observation/KnownLogEvents.swift` ships. Each was
+verified to fire at a distinct backup-lifecycle moment:
+
+| Matcher | Category | When it fires | Notes |
+|---|---|---|---|
+| `"Backup requested to last destination"` | `BackupDispatching` | Backup invocation (manual or scheduled) | Earliest signal — fires before backupd opens any XPC session |
+| `"Attempting backup with mode"` | `BackupJob` | Immediately after dispatch | Includes trigger mode (`"manual backup"`, etc.) in the message body |
+| `"Mounting destination"` | `MountedDestinationManager` | Destination mount for backup session | Includes the destination UUID |
+| `"Found a destination disk mounted at"` | `BackupDestination` | Setup phase, once per backup | Includes the volume UUID + mount path |
+| `"Completing backup"` | `BackupEngine` | Copy phase finished, finalization begins | Fires ~0.5s before "Successfully completed" |
+| `"Successfully completed backing up"` | `BackupEngine` | New snapshot URL committed | **Body includes the new snapshot URL** — would be a clean state-detection source if Decision #1 weren't pinning us to polling |
+
+Explicitly NOT wake-worthy (drowned out by these strings if we left them in):
+- `"connection invalid"` — XPC tear-down, fires constantly throughout the session
+- `"TRY_ERROR_BLOCK"` — internal error-coercion noise from `DO_OR_BAIL` category
+- `"Limiting logging for limit"` — Apple's own log-flood protection
+
+Predicate stays `(processImagePath CONTAINS "backupd") OR (subsystem == "com.apple.TimeMachine")` —
+both clauses are useful. The first catches backupd-helper events even if Apple ever drops
+the subsystem tag. Filtering on the matcher list happens in
+`KnownLogEvents.isWakeWorthy(_:)` after the `log stream` predicate, not in the predicate
+itself (Apple's predicate syntax is finicky and can't do substring matching on
+`eventMessage`).
+
+### 4.1 Same-window finding — success-detection bug on Tahoe
+
+The discovery backup ALSO surfaced a real bug, **not yet fixed**: snapshot-path delta
+detection fails on macOS 26.3.1 because the snapshot URL is committed BEFORE TMEject's
+first confirming-phase poll. See `docs/architecture.md` under Tahoe quirks for the trace
+and the planned fix.
 
 ### 5. Re-verification on future macOS releases
 
