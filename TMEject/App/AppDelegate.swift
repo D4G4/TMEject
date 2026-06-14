@@ -24,11 +24,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         monitor.register()
         hotkeyMonitor = monitor
         presentLaunchSurfacesIfNeeded()
-        // Sparkle: kick off a silent background check after launch settles. The shared
-        // updater controller is created here (singleton) so the first reference to it
-        // matters — it starts the periodic check loop. No-op in DEBUG builds without a
-        // real SUPublicEDKey.
         TMEjectUpdater.shared.checkForUpdatesInBackgroundAfterLaunchSettle()
+
+        // Catch "user switched to System Settings, granted FDA, switched back" — the
+        // didBecomeActive notification fires; refreshFDAState is debounced so this is cheap.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.coordinator.refreshFDAState()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

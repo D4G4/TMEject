@@ -43,6 +43,24 @@ struct MenuBarContentView: View {
                     .lineLimit(3)
             }
 
+            if needsFDABanner {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Auto-eject paused — Grant Full Disk Access")
+                            .font(.caption)
+                        Button("Grant access") {
+                            UIActionLogger.buttonTapped("Open Full Disk Access", context: "Menu Bar")
+                            NSWorkspace.shared.open(SystemSettingsLink.fullDiskAccess)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+
             if coordinator.loginItemStatus == .requiresApproval {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -103,7 +121,15 @@ struct MenuBarContentView: View {
         .frame(width: 280)
         .onAppear {
             coordinator.refreshLoginItemStatus()
+            coordinator.refreshFDAState()
         }
+    }
+
+    /// Banner only when the user has opted in to auto-eject AND FDA is missing — silent
+    /// otherwise per spec (no nag when auto-eject is off).
+    private var needsFDABanner: Bool {
+        let autoEjectOn = UserDefaults.standard.bool(forKey: SettingsKey.autoEjectEnabled)
+        return autoEjectOn && coordinator.fdaState != .granted
     }
 
     private func headline(for state: AppState) -> String {

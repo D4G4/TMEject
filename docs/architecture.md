@@ -121,6 +121,40 @@ Things that work differently on macOS 26 (Tahoe) than the documented contract
 or than older macOS releases. Re-verify each of these on the next major OS
 update — they're the most likely places to break.
 
+### `tmutil latestbackup` and `tmutil listbackups` require Full Disk Access
+
+Verified empirically on 26.3.1. The error is distinctive:
+
+```
+$ tmutil latestbackup
+tmutil: latestbackup requires Full Disk Access privileges.
+```
+
+This was NOT documented in older macOS releases. **Critical consequence**: TMEject's
+snapshot-path delta success detection (see "Why success is detected by snapshot-path
+delta") relies on `tmutil latestbackup`. Without FDA:
+
+- `tmutil status -X` keeps working — we see backups start and end.
+- `tmutil destinationinfo -X` keeps working — we can resolve the destination.
+- `tmutil latestbackup` refuses → observer marks `entryProbeFailed=true` (and same on
+  exit) → state machine safely refuses to claim success → auto-eject **never fires**.
+- `lsof` against the mounted TM volume returns an empty holder list — `ls
+  /Volumes/<TM-drive>/` itself returns "Operation not permitted" without FDA, so lsof
+  sees no files at all there. The "Last error" diagnostic surface in the menu bar then
+  reports "no holders found" instead of the real culprit.
+
+In short: without FDA, the post-Copying half of the app is non-functional. The state
+machine doesn't malfunction (it correctly refuses to claim success), but the user
+experience is "auto-eject doesn't seem to work."
+
+TMEject probes FDA at launch, when Settings opens, when the user toggles auto-eject ON,
+and on `NSApplication.didBecomeActiveNotification` (debounced 5s). The
+`FullDiskAccessProbing` protocol classifies the result by inspecting `latestbackup`
+stderr for the "Full Disk Access" substring — `.granted` / `.denied` / `.unknown`. The
+coordinator surfaces denial via `lastError` ("Auto-eject pending — Full Disk Access
+required"), the menu bar shows a "Grant access" banner when auto-eject is ON +
+denied, and a rate-limited (once per 24h) system notification fires.
+
 ### `tmutil destinationinfo -X` returns `ID`, not `DestinationID`
 
 The legacy plist key was `DestinationID`. On macOS 26.3.1 the key is `ID`. The

@@ -10,17 +10,46 @@ struct GeneralTab: View {
     @AppStorage(SettingsKey.notifyOnBackupFailure) private var notifyOnBackupFailure = true
 
     @State private var loginItemError: String?
+    @State private var fdaCheckInFlight = false
 
     var body: some View {
         Form {
-            Section("Auto-eject") {
-                Toggle("Eject the drive after a successful backup", isOn: $autoEjectEnabled)
-                    .onChange(of: autoEjectEnabled) { _, on in
-                        UIActionLogger.settingChanged("autoEjectEnabled", value: "\(on)")
-                        if on {
-                            Task { _ = await coordinator.requestNotificationAuthIfNeeded() }
-                        }
+            Section("Permissions") {
+                HStack {
+                    Text("Full Disk Access")
+                    Spacer()
+                    fdaStatusBadge
+                    Button(fdaCheckInFlight ? "Checking…" : "Check again") {
+                        fdaCheckInFlight = true
+                        coordinator.refreshFDAState(force: true)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { fdaCheckInFlight = false }
                     }
+                    .controlSize(.small)
+                    .disabled(fdaCheckInFlight)
+                    Button("Open Settings") {
+                        UIActionLogger.buttonTapped("Open Full Disk Access", context: "General")
+                        NSWorkspace.shared.open(SystemSettingsLink.fullDiskAccess)
+                    }
+                    .controlSize(.small)
+                }
+                Text("Required so TMEject can ask Time Machine whether the latest backup actually completed. `tmutil status -X` doesn't need this; `tmutil latestbackup` does.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Auto-eject") {
+                Toggle("Eject the drive after a successful backup",
+                       isOn: Binding(
+                        get: { autoEjectEnabled },
+                        set: { newValue in coordinator.setAutoEjectEnabled(newValue) }
+                       ))
+
+                if autoEjectEnabled && coordinator.fdaState != .granted {
+                    Text("Required to detect backup completion. Open Settings to grant Full Disk Access.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
 
                 Picker("Cooldown between auto-ejects", selection: $cooldownMinutes) {
                     ForEach(CooldownOption.allCases) { opt in
@@ -88,6 +117,28 @@ struct GeneralTab: View {
         .formStyle(.grouped)
         .onAppear {
             coordinator.refreshLoginItemStatus()
+            coordinator.refreshFDAState()
+        }
+    }
+
+    @ViewBuilder
+    private var fdaStatusBadge: some View {
+        switch coordinator.fdaState {
+        case .granted:
+            Label("Granted", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .labelStyle(.titleAndIcon)
+                .font(.caption)
+        case .denied:
+            Label("Not granted", systemImage: "xmark.circle.fill")
+                .foregroundStyle(.red)
+                .labelStyle(.titleAndIcon)
+                .font(.caption)
+        case .unknown:
+            Label("Unknown", systemImage: "questionmark.circle.fill")
+                .foregroundStyle(.secondary)
+                .labelStyle(.titleAndIcon)
+                .font(.caption)
         }
     }
 }

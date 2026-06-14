@@ -36,6 +36,24 @@ struct LiveTMUtilClient: TMUtilClient {
         _ = try await run(args: ["stopbackup"])
     }
 
+    func latestBackupRaw() async -> TMUtilRawResult {
+        // Doesn't throw — caller (FDA prober) needs to look at stderr text to distinguish
+        // "FDA missing" (exit 80 + "Full Disk Access" stderr) from "no destination mounted"
+        // (exit non-zero + backupd error) from "no snapshots yet" (exit 0, empty stdout).
+        do {
+            let result = try await run(args: ["latestbackup"])
+            return TMUtilRawResult(
+                stdout: result.stdoutString,
+                stderr: result.stderrString,
+                exitCode: 0
+            )
+        } catch TMUtilError.nonZeroExit(let code, let stderr) {
+            return TMUtilRawResult(stdout: "", stderr: stderr, exitCode: code)
+        } catch {
+            return TMUtilRawResult(stdout: "", stderr: "\(error)", exitCode: -1)
+        }
+    }
+
     // MARK: - Process plumbing
 
     private struct ProcessResult {

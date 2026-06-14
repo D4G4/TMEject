@@ -29,13 +29,14 @@ struct OnboardingView: View {
     private var content: some View {
         switch page {
         case 0: WelcomePage(autoEjectEnabled: $autoEjectEnabled, cooldownMinutes: $cooldownMinutes)
-        default: PermissionAskView(coordinator: coordinator)
+        case 1: PermissionAskView(coordinator: coordinator)
+        default: FDAOnboardingPage(coordinator: coordinator, onSkip: { onComplete() })
         }
     }
 
     private var pageDots: some View {
         HStack(spacing: 6) {
-            ForEach(0..<2, id: \.self) { i in
+            ForEach(0..<3, id: \.self) { i in
                 Circle()
                     .fill(i == page ? Color.accentColor : Color.secondary.opacity(0.3))
                     .frame(width: 6, height: 6)
@@ -45,20 +46,22 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var navigation: some View {
-        if page == 0 {
-            Button("Continue") {
-                UIActionLogger.buttonTapped("Onboarding Continue", context: "page 1")
-                page = 1
-            }
-            .keyboardShortcut(.defaultAction)
-        } else {
-            HStack(spacing: 8) {
+        HStack(spacing: 8) {
+            if page > 0 {
                 Button("Back") {
-                    UIActionLogger.buttonTapped("Onboarding Back", context: "page 2")
-                    page = 0
+                    UIActionLogger.buttonTapped("Onboarding Back", context: "page \(page + 1)")
+                    page -= 1
                 }
+            }
+            if page < 2 {
+                Button("Continue") {
+                    UIActionLogger.buttonTapped("Onboarding Continue", context: "page \(page + 1)")
+                    page += 1
+                }
+                .keyboardShortcut(.defaultAction)
+            } else {
                 Button("Finish") {
-                    UIActionLogger.buttonTapped("Onboarding Finish", context: "page 2")
+                    UIActionLogger.buttonTapped("Onboarding Finish", context: "page 3")
                     onComplete()
                 }
                 .keyboardShortcut(.defaultAction)

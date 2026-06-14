@@ -7,6 +7,7 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var lastToast: ToastMessage?
     @Published private(set) var loginItemStatus: LoginItemStatus = .notRegistered
+    @Published private(set) var fdaState: FDAState = .unknown
 
     struct ToastMessage: Equatable {
         let level: AppCommand.ToastLevel
@@ -25,6 +26,12 @@ final class AppCoordinator: ObservableObject {
     private let notifier: SystemNotifier
     private let toastPresenter: ToastPresenter?
     private let loginItem: LoginItemManaging
+    private let fdaProber: FullDiskAccessProbing
+    private var lastFDAProbeAt: TimeInterval = -.greatestFiniteMagnitude
+    private var fdaProbeInFlight: Task<Void, Never>?
+    private var lastFDANotificationAt: TimeInterval = -.greatestFiniteMagnitude
+    private static let fdaProbeDebounceSeconds: TimeInterval = 5
+    private static let fdaNotificationRateLimitSeconds: TimeInterval = 60 * 60 * 24    // once per 24h
     private var observer: PollingObserver?
     private var lastResolvedDestination: ResolvedDestination?
 
@@ -44,7 +51,8 @@ final class AppCoordinator: ObservableObject {
         clock: MonotonicClock = SystemClock(),
         notifier: SystemNotifier = LiveSystemNotifier(),
         toastPresenter: ToastPresenter? = nil,
-        loginItem: LoginItemManaging = LiveLoginItemManager()
+        loginItem: LoginItemManaging = LiveLoginItemManager(),
+        fdaProber: FullDiskAccessProbing? = nil
     ) {
         self.tmutil = tmutil
         self.ejector = ejector
@@ -56,12 +64,88 @@ final class AppCoordinator: ObservableObject {
         self.notifier = notifier
         self.toastPresenter = toastPresenter
         self.loginItem = loginItem
+        self.fdaProber = fdaProber ?? LiveFullDiskAccessProber(tmutil: tmutil)
 
         if defaults.object(forKey: Self.toastsEnabledKey) == nil {
             defaults.set(true, forKey: Self.toastsEnabledKey)
         }
         self.loginItemStatus = loginItem.currentStatus()
         defaults.set(self.loginItemStatus == .enabled, forKey: SettingsKey.launchAtLogin)
+    }
+
+    // MARK: - Full Disk Access
+
+    /// Re-probe the FDA permission. Debounced to once per 5s by default — use `force: true`
+    /// to bypass (used at launch + on explicit user action like "Check again" in onboarding).
+    /// Callable from any thread; coroutine work is wrapped in a Task on this MainActor.
+    func refreshFDAState(force: Bool = false) {
+        let now = clock.now()
+        if !force && (now - lastFDAProbeAt) < Self.fdaProbeDebounceSeconds {
+            return
+        }
+        if let inflight = fdaProbeInFlight, !inflight.isCancelled { return }
+        lastFDAProbeAt = now
+        fdaProbeInFlight = Task { [weak self] in
+            guard let self else { return }
+            let newState = await self.fdaProber.currentState()
+            await MainActor.run {
+                let prior = self.fdaState
+                self.fdaState = newState
+                if prior != newState {
+                    TMEjectLog.app.info("FDA: \(prior) → \(newState)")
+                }
+                self.evaluateAutoEjectGate(reason: "fdaState=\(newState)")
+                self.fdaProbeInFlight = nil
+            }
+        }
+    }
+
+    /// Whether the auto-eject path can actually function right now. Auto-eject ON +
+    /// FDA granted = green. Auto-eject ON + FDA denied = stuck (snapshot-path delta success
+    /// detection can't run, so the state machine will safely refuse success → never ejects).
+    var isAutoEjectFunctional: Bool {
+        guard defaults.bool(forKey: SettingsKey.autoEjectEnabled) else { return true }
+        return fdaState == .granted
+    }
+
+    /// Called from the Settings toggle and from onboarding when the user opts in.
+    /// Does NOT fight the user's intent — the toggle is stored regardless of FDA. Surfaces
+    /// the dependency via lastError + a rate-limited notification.
+    func setAutoEjectEnabled(_ enabled: Bool) {
+        defaults.set(enabled, forKey: SettingsKey.autoEjectEnabled)
+        UIActionLogger.settingChanged("autoEjectEnabled", value: "\(enabled)")
+        if enabled {
+            Task { _ = await self.requestNotificationAuthIfNeeded() }
+            refreshFDAState(force: true)
+        }
+        evaluateAutoEjectGate(reason: "toggle=\(enabled)")
+    }
+
+    /// Reconciles lastError + the one-time FDA-required system notification when the gate
+    /// state changes. Idempotent — safe to call multiple times.
+    private func evaluateAutoEjectGate(reason: String) {
+        let autoEjectOn = defaults.bool(forKey: SettingsKey.autoEjectEnabled)
+        if autoEjectOn && fdaState == .denied {
+            lastError = "Auto-eject pending — Full Disk Access required"
+            maybeSendFDANotification()
+        } else if !autoEjectOn, lastError == "Auto-eject pending — Full Disk Access required" {
+            // User flipped auto-eject OFF — clear the surface.
+            lastError = nil
+        }
+        TMEjectLog.app.debug("evaluateAutoEjectGate (\(reason)) autoEjectOn=\(autoEjectOn) fdaState=\(fdaState)")
+    }
+
+    private func maybeSendFDANotification() {
+        let now = clock.now()
+        if (now - lastFDANotificationAt) < Self.fdaNotificationRateLimitSeconds { return }
+        lastFDANotificationAt = now
+        Task {
+            await notifier.deliver(
+                title: "TMEject needs Full Disk Access",
+                body: "Auto-eject can't detect backup completion without it. Open System Settings → Privacy & Security → Full Disk Access.",
+                category: .generic
+            )
+        }
     }
 
     /// Polled at popover/window appearances. Cheap (single SMAppService.status read).
@@ -89,8 +173,8 @@ final class AppCoordinator: ObservableObject {
         guard observer == nil else { return }
         TMEjectLog.app.info("AppCoordinator.start")
 
-        // M3: restore confirming state from prior run if TM is still mid-confirming.
         Task { await self.restoreFromRelaunchIfNeeded() }
+        refreshFDAState(force: true)
 
         let observer = PollingObserver(tmutil: tmutil, emit: { [weak self] event in
             await self?.deliver(event)

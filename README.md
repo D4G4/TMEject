@@ -68,6 +68,22 @@ design and why, the state machine, the snapshot-delta success-detection
 rationale, the retry schedule, and the Tahoe-specific quirks worth knowing
 about before touching the observation/eject paths.
 
+## Permissions
+
+| Permission | Why TMEject asks |
+|---|---|
+| Full Disk Access | Required to call `tmutil latestbackup` and to `lsof` the mounted Time Machine volume. Without it, auto-eject can't detect backup completion and the "what's holding the drive" diagnostic returns empty. Required only when **auto-eject** is on; manual eject + Eject & Lock work without it. |
+| Notifications | Surfaces backup-complete and eject-failure events. Requested only when you opt in to auto-eject — not at launch. |
+| Login Items (SMAppService) | "Launch at login" toggle in Settings. Optional. |
+
+TMEject does **not** request:
+
+- Accessibility — the ⌃⌥⌘E hotkey uses Carbon's `RegisterEventHotKey`, which is
+  permission-free.
+- Apple Events / Automation — `tmutil stopbackup` runs via `Process`, no AE bridge.
+- Removable Volumes (Files & Folders) — Full Disk Access is the umbrella; Apple's
+  Removable Volumes pane is a narrower variant we don't need on top.
+
 ## Logs
 
 Daily session logs live at:
