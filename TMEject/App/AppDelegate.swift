@@ -68,20 +68,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     // MARK: - Launch UX
 
+    /// Dismisses the currently visible Launch HUD if one is up. Called from the popover's
+    /// `.onAppear` so the HUD doesn't sit on top of an opened popover — but does NOT
+    /// suppress future launches. The HUD is a per-launch "where is my icon" helper, not a
+    /// one-time onboarding step; users forget icon positions, menu-bar managers
+    /// (Bartender, iBar) hide/reorder things, and a fresh login session can shuffle
+    /// layout. So we show it every launch and only dismiss the in-flight one here.
     func dismissLaunchHUDIfNeeded() {
         guard launchHUD.isShowing else { return }
         launchHUD.dismiss()
-        UserDefaults.standard.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
         NSApp.setActivationPolicy(.accessory)
     }
 
-    /// Default flow is **Onboarding A** (HUD-only). The modal explainer is only shown when
-    /// the user explicitly resets onboarding from Settings → Troubleshooting (which sets
+    /// Always shows the Launch HUD on launch. The modal explainer is only shown when the
+    /// user explicitly resets onboarding from Settings → Troubleshooting (which sets
     /// `forceOnboardingModal=true`).
     private func presentLaunchSurfacesIfNeeded() {
         let defaults = UserDefaults.standard
         let didOnboarding = defaults.bool(forKey: SettingsKey.hasCompletedOnboarding)
-        let didHUD       = defaults.bool(forKey: SettingsKey.hasSeenLaunchHUD)
         let forceModal   = defaults.bool(forKey: SettingsKey.forceOnboardingModal)
 
         if forceModal {
@@ -89,36 +93,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             defaults.set(false, forKey: SettingsKey.forceOnboardingModal)
             onboarding.show(coordinator: coordinator) { [weak self] in
                 defaults.set(true, forKey: SettingsKey.hasCompletedOnboarding)
-                self?.presentLaunchHUDIfNeeded()
+                self?.presentLaunchHUD()
             }
             return
         }
 
         if !didOnboarding {
-            // Onboarding A — set the flag immediately, just show the HUD. The HUD is
-            // self-explanatory and dismisses on first popover open.
+            // Onboarding A — set the flag immediately, then show the HUD.
             UIActionLogger.onboardingStep("first launch — HUD only (Onboarding A)")
             defaults.set(true, forKey: SettingsKey.hasCompletedOnboarding)
         }
 
-        if !didHUD {
-            presentLaunchHUDIfNeeded()
-        } else {
-            NSApp.setActivationPolicy(.accessory)
-        }
+        presentLaunchHUD()
     }
 
-    private func presentLaunchHUDIfNeeded() {
-        let defaults = UserDefaults.standard
-        if defaults.bool(forKey: SettingsKey.hasSeenLaunchHUD) { return }
+    /// Unconditionally shows the Launch HUD (idempotent — `LaunchHUDWindowController.show`
+    /// early-returns if a panel is already up).
+    private func presentLaunchHUD() {
         launchHUD.show(
             onFound: { [weak self] in
-                defaults.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
                 NSApp.setActivationPolicy(.accessory)
                 self?.coordinator.requestPokeNow()
             },
             onCantFind: { [weak self] in
-                defaults.set(true, forKey: SettingsKey.hasSeenLaunchHUD)
                 NSApp.setActivationPolicy(.accessory)
                 self?.launchHUD.showCantFindAlert()
             }

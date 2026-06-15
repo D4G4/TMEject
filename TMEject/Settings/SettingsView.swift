@@ -12,7 +12,6 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.toastsEnabled)       private var toastsEnabled    = true
     @AppStorage(SettingsKey.translucentSurfaces) private var translucentSurfaces = false
     @AppStorage(SettingsKey.hasCompletedOnboarding) private var hasCompletedOnboarding = false
-    @AppStorage(SettingsKey.hasSeenLaunchHUD)    private var hasSeenLaunchHUD = false
     @AppStorage(SettingsKey.forceOnboardingModal) private var forceOnboardingModal = false
 
     @State private var troubleshootingOpen = false
@@ -137,7 +136,6 @@ struct SettingsView: View {
                             subtitle: "Show the explainer next time TMEject launches.") {
                             Button("Reset") {
                                 hasCompletedOnboarding = false
-                                hasSeenLaunchHUD = false
                                 forceOnboardingModal = true
                                 UIActionLogger.buttonTapped("Reset onboarding", context: "Settings/Troubleshooting")
                             }

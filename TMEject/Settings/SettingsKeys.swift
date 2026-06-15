@@ -9,7 +9,7 @@ enum SettingsKey {
     static let toastsEnabled           = "co.dls.tmeject.toastsEnabled"             // default true
     static let runLsofOnEjectFailure   = "co.dls.tmeject.runLsofOnEjectFailure"     // default true
     static let hasCompletedOnboarding  = "co.dls.tmeject.hasCompletedOnboarding"
-    static let hasSeenLaunchHUD        = "co.dls.tmeject.hasSeenLaunchHUD"
+    // hasSeenLaunchHUD removed — the HUD is shown every launch, not gated on a flag.
     static let betaChannel             = "co.dls.tmeject.betaChannel"
     static let preBackupLatestBackup   = "co.dls.tmeject.preBackupLatestBackupPath"
     static let launchAtLogin           = "co.dls.tmeject.launchAtLogin"     // @AppStorage mirror
