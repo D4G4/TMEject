@@ -10,10 +10,7 @@ final class LaunchHUDWindowController {
         if window != nil { return }
 
         let width: CGFloat = 340
-        let height: CGFloat = 140
         let visible = screen.visibleFrame
-        let x = visible.maxX - width - 20
-        let y = visible.maxY - height - 12
 
         let view = LaunchHUDView(
             onFound: { [weak self] in
@@ -25,6 +22,16 @@ final class LaunchHUDWindowController {
                 onCantFind()
             }
         )
+
+        // Size the panel to the SwiftUI view's intrinsic height — previously we hard-coded
+        // 140pt, but the view's content (two text rows + buttons + 14pt vertical padding)
+        // sizes to ~110pt, leaving the SwiftUI content centered in the taller hosting view
+        // with ~15pt of clear panel showing above and below the rounded HUD surface.
+        let hosting = NSHostingView(rootView: view)
+        let fitting = hosting.fittingSize
+        let height = max(fitting.height, 100)
+        let x = visible.maxX - width - 20
+        let y = visible.maxY - height - 12
 
         let panel = NSPanel(
             contentRect: NSRect(x: x, y: y, width: width, height: height),
@@ -40,7 +47,6 @@ final class LaunchHUDWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.appearance = NSApp.effectiveAppearance
 
-        let hosting = NSHostingView(rootView: view)
         hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
         hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
