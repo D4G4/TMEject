@@ -302,9 +302,14 @@ final class AppCoordinator: ObservableObject {
 
     /// Bonus channel from PollingObserver that doesn't go through the state machine.
     /// Used to update UI-only state: backupPct, drivePresent (cheap revalidation).
+    ///
+    /// `status.percent` is already normalized to 0…100 by `StatusPlist.normalizePercent`
+    /// (see StatusPlist.swift). No further scaling here. When the daemon hasn't reported a
+    /// percent yet but we know we're running, we keep the last-known value rather than
+    /// snapping to 0 — avoids a brief 78 → 0 → 78 flicker between polls.
     private func handleStatusSnapshot(_ status: StatusPlist) {
-        if let pct = status.percent, pct >= 0 {
-            backupPct = pct * 100
+        if let pct = status.percent {
+            backupPct = pct
         } else if !status.running {
             backupPct = 0
         }
@@ -438,6 +443,13 @@ final class AppCoordinator: ObservableObject {
     // Test seam for EjectAndLockTests; drives the state machine without the observer chain.
     func deliverFromTest(_ event: AppEvent) async {
         await deliver(event)
+    }
+
+    /// Test seam — drives the PollingObserver's bonus `onStatus` channel without spinning up
+    /// the observer task itself. Used by tests that assert `backupPct` flow on the same
+    /// `StatusPlist` shape the live observer would hand us.
+    func deliverStatusSnapshotFromTest(_ status: StatusPlist) {
+        handleStatusSnapshot(status)
     }
 
     #if DEBUG

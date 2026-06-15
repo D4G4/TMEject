@@ -20,13 +20,15 @@ final class StatusPlistTests: XCTestCase {
         """
         let status = try StatusPlist.parse(plistData: Data(xml.utf8))
         XCTAssertFalse(status.running)
-        XCTAssertEqual(status.percent ?? .nan, -1.0)
+        // Idle sentinel -1 is normalized to nil — consumers expect "no value" semantics.
+        XCTAssertNil(status.percent)
         XCTAssertNil(status.backupPhase)
         XCTAssertNil(status.rawTotalBytes)
         XCTAssertNil(status.destinationID)
     }
 
-    func testParsesRunningBackupPlist() throws {
+    func testParsesRunningBackupPlist_topLevelFraction() throws {
+        // Legacy top-level Percent as a 0..1 fraction.
         let xml = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -43,9 +45,80 @@ final class StatusPlistTests: XCTestCase {
         let status = try StatusPlist.parse(plistData: Data(xml.utf8))
         XCTAssertTrue(status.running)
         XCTAssertEqual(status.backupPhase, "Copying")
-        XCTAssertEqual(status.percent ?? .nan, 0.42, accuracy: 1e-9)
+        // Parser normalizes 0..1 fraction → 0..100 scale.
+        XCTAssertEqual(status.percent ?? .nan, 42.0, accuracy: 1e-9)
         XCTAssertEqual(status.rawTotalBytes, 123_456_789_012)
         XCTAssertEqual(status.destinationID, UUID(uuidString: "0852943E-8EC2-4386-8C31-ECE56488E8B4"))
+    }
+
+    func testParsesRunningBackupPlist_nestedProgressFraction() throws {
+        // Tahoe layout: top-level Percent stays at idle-ish value while the live progress
+        // is in Progress.Percent. Parser must prefer the nested value.
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0">
+        <dict>
+            <key>Running</key><true/>
+            <key>BackupPhase</key><string>Copying</string>
+            <key>Percent</key><real>0</real>
+            <key>Progress</key>
+            <dict>
+                <key>Percent</key><real>0.78</real>
+                <key>TimeRemaining</key><integer>120</integer>
+            </dict>
+        </dict>
+        </plist>
+        """
+        let status = try StatusPlist.parse(plistData: Data(xml.utf8))
+        XCTAssertEqual(status.percent ?? .nan, 78.0, accuracy: 1e-9)
+    }
+
+    func testParsesRunningBackupPlist_nestedProgressPreferredOverTopLevel() throws {
+        // When both are present, the nested Progress.Percent wins — it's the authoritative
+        // value during active backup.
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0">
+        <dict>
+            <key>Running</key><true/>
+            <key>Percent</key><real>0.10</real>
+            <key>Progress</key>
+            <dict>
+                <key>Percent</key><real>0.78</real>
+            </dict>
+        </dict>
+        </plist>
+        """
+        let status = try StatusPlist.parse(plistData: Data(xml.utf8))
+        XCTAssertEqual(status.percent ?? .nan, 78.0, accuracy: 1e-9)
+    }
+
+    func testParsesRunningBackupPlist_alreadyScaledTopLevel() throws {
+        // Defensive: if some macOS variant reports already-scaled 0..100, accept as-is.
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0">
+        <dict>
+            <key>Running</key><true/>
+            <key>Percent</key><real>12.5</real>
+        </dict>
+        </plist>
+        """
+        let status = try StatusPlist.parse(plistData: Data(xml.utf8))
+        XCTAssertEqual(status.percent ?? .nan, 12.5, accuracy: 1e-9)
+    }
+
+    func testNormalizePercent_scaleBoundaries() {
+        XCTAssertNil(StatusPlist.normalizePercent(nil))
+        XCTAssertNil(StatusPlist.normalizePercent(-1))
+        XCTAssertNil(StatusPlist.normalizePercent(.nan))
+        XCTAssertEqual(StatusPlist.normalizePercent(0) ?? .nan, 0)
+        XCTAssertEqual(StatusPlist.normalizePercent(0.5) ?? .nan, 50)
+        // 1.0 boundary: treated as fraction → 100 (documented in StatusPlist.swift).
+        XCTAssertEqual(StatusPlist.normalizePercent(1.0) ?? .nan, 100)
+        XCTAssertEqual(StatusPlist.normalizePercent(78) ?? .nan, 78)
+        // Clamp anything pathologically > 100.
+        XCTAssertEqual(StatusPlist.normalizePercent(250) ?? .nan, 100)
     }
 
     func testMissingKeysDefaultToNilOrFalse() throws {

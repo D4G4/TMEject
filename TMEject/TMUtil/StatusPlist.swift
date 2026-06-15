@@ -4,6 +4,19 @@ struct StatusPlist: Equatable, Sendable {
     let running: Bool
     let backupPhase: String?
     let rawTotalBytes: Int64?
+    /// Backup progress, **normalized to a 0…100 scale** at parse time. `nil` when the
+    /// underlying daemon hasn't reported one yet (idle sentinel `-1`, or no Percent key /
+    /// Progress dict in either form).
+    ///
+    /// Why normalize at parse time: `tmutil status -X` reports progress in at least three
+    /// places that drift between macOS releases:
+    ///   • top-level `Percent` (idle = `-1`; during backup observed empirically as nil or `0`
+    ///     while the real value lives in the nested `Progress` dict on Tahoe 26.3),
+    ///   • `Progress.Percent` (0…1 fraction during copy phases — documented),
+    ///   • some legacy outputs report the same field already scaled to 0…100.
+    /// Consumers want one number to display. We detect the scale empirically: any value
+    /// in [0,1] is treated as a fraction and multiplied by 100; any value > 1 is treated as
+    /// already in 0…100 and clamped at 100. Idle `-1` becomes `nil`.
     let percent: Double?
     let destinationID: UUID?
 
@@ -39,10 +52,14 @@ struct StatusPlist: Equatable, Sendable {
         else if let s = dict["_raw_totalBytes"] as? String { totalBytes = Int64(s) }
         else { totalBytes = nil }
 
-        let percent: Double?
-        if let n = dict["Percent"] as? NSNumber { percent = n.doubleValue }
-        else if let s = dict["Percent"] as? String { percent = Double(s) }
-        else { percent = nil }
+        // Progress dict has the authoritative value on Tahoe during active backup.
+        // Prefer it; fall back to top-level Percent.
+        let progressDict = dict["Progress"] as? [String: Any]
+        let rawPercent: Double? = {
+            if let p = progressDict, let v = extractDouble(p["Percent"]) { return v }
+            return extractDouble(dict["Percent"])
+        }()
+        let percent = normalizePercent(rawPercent)
 
         let destID: UUID?
         if let s = dict["DestinationID"] as? String { destID = UUID(uuidString: s) }
@@ -55,6 +72,28 @@ struct StatusPlist: Equatable, Sendable {
             percent: percent,
             destinationID: destID
         )
+    }
+
+    private static func extractDouble(_ raw: Any?) -> Double? {
+        if let n = raw as? NSNumber { return n.doubleValue }
+        if let s = raw as? String, let v = Double(s) { return v }
+        return nil
+    }
+
+    /// Empirical scale detection for `Percent`:
+    ///   • `nil` or NaN → `nil`
+    ///   • idle sentinel `-1` (or any negative) → `nil`
+    ///   • 0…1 → treat as fraction, return × 100 (0…100)
+    ///   • > 1 → treat as already-scaled, clamp at 100
+    /// This means a legitimate "1%" value coming in as `1.0` will display as `100`. We accept
+    /// that ambiguity at the single boundary point — backup progress is unlikely to sit at
+    /// exactly `1.0` long enough to be visible, and the alternative (a flag in the plist
+    /// telling us which scale Apple used) doesn't exist.
+    static func normalizePercent(_ raw: Double?) -> Double? {
+        guard let v = raw, !v.isNaN else { return nil }
+        if v < 0 { return nil }
+        if v <= 1 { return v * 100 }
+        return min(v, 100)
     }
 }
 
