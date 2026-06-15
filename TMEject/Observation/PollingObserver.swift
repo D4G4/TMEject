@@ -94,6 +94,15 @@ actor PollingObserver {
             TMEjectLog.observer.error("tmutil status failed: \(error)")
             return
         }
+        // Per-tick payload log — Running, Percent (already 0..100), BackupPhase, totalBytes,
+        // and the active/stall/confirming tracking flags so we can correlate cadence with
+        // command emissions in the transition logs below.
+        let pctDesc = status.percent.map { String(format: "%.1f", $0) } ?? "nil"
+        let bytesDesc = status.rawTotalBytes.map(String.init) ?? "nil"
+        let phaseDesc = status.backupPhase ?? "nil"
+        TMEjectLog.observer.debug(
+            "poll tick: Running=\(status.running) Percent=\(pctDesc) BackupPhase=\(phaseDesc) _raw_totalBytes=\(bytesDesc) stallActive=\(stallActive) confirmingActive=\(confirmingActive)"
+        )
         await onStatus(status)
 
         let phase = BackupPhaseKind.classify(status.backupPhase)

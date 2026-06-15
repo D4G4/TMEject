@@ -9,12 +9,22 @@ struct LiveTMUtilClient: TMUtilClient {
 
     func status() async throws -> StatusPlist {
         let result = try await run(args: ["status", "-X"])
-        return try StatusPlist.parse(plistData: result.stdout)
+        let status = try StatusPlist.parse(plistData: result.stdout)
+        let pct = status.percent.map { String(format: "%.1f", $0) } ?? "nil"
+        TMEjectLog.tmutil.debug(
+            "status -X → Running=\(status.running) Percent=\(pct) BackupPhase=\(status.backupPhase ?? "nil") _raw_totalBytes=\(status.rawTotalBytes.map(String.init) ?? "nil")"
+        )
+        return status
     }
 
     func destinationInfo() async throws -> [DestinationInfo] {
         let result = try await run(args: ["destinationinfo", "-X"])
-        return try DestinationInfo.parseList(plistData: result.stdout)
+        let dests = try DestinationInfo.parseList(plistData: result.stdout)
+        let summary = dests.map { d -> String in
+            "ID=\(d.id.uuidString.prefix(8))… MountPoint=\(d.mountPoint?.path ?? "nil")"
+        }.joined(separator: " | ")
+        TMEjectLog.tmutil.debug("destinationinfo -X → [\(summary.isEmpty ? "no destinations" : summary)]")
+        return dests
     }
 
     func latestBackup() async throws -> URL? {
@@ -25,15 +35,25 @@ struct LiveTMUtilClient: TMUtilClient {
         do {
             let result = try await run(args: ["latestbackup"])
             let path = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+            TMEjectLog.tmutil.debug("latestbackup → \(path.isEmpty ? "<empty>" : path)")
             guard !path.isEmpty else { return nil }
             return URL(fileURLWithPath: path)
-        } catch TMUtilError.nonZeroExit(_, let stderr) {
+        } catch TMUtilError.nonZeroExit(let code, let stderr) {
+            TMEjectLog.tmutil.debug("latestbackup → exit \(code) stderr=\(Self.truncate(stderr))")
             throw TMUtilError.latestBackupUnavailable(stderr: stderr)
         }
     }
 
     func stopBackup() async throws {
+        TMEjectLog.tmutil.debug("stopbackup → invoking")
         _ = try await run(args: ["stopbackup"])
+        TMEjectLog.tmutil.debug("stopbackup → ok")
+    }
+
+    /// Truncate to 2KB max for log output — keeps the log readable when tmutil prints a
+    /// multi-line backupd error blob.
+    private static func truncate(_ s: String, max: Int = 2048) -> String {
+        s.count <= max ? s : s.prefix(max) + "…[+\(s.count - max)B]"
     }
 
     func latestBackupRaw() async -> TMUtilRawResult {

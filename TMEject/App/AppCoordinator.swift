@@ -4,16 +4,69 @@ import SwiftUI
 @MainActor
 final class AppCoordinator: ObservableObject {
     @Published private(set) var state: AppState = .idle
-    @Published private(set) var lastError: String?
+    @Published private(set) var lastError: String? {
+        didSet {
+            if oldValue != lastError {
+                TMEjectLog.app.debug("lastError: \(oldValue ?? "nil") → \(lastError ?? "nil")")
+                if lastError != nil { errorSamplesThisSession.append(lastError!) }
+            }
+        }
+    }
     @Published private(set) var lastToast: ToastMessage?
     @Published private(set) var loginItemStatus: LoginItemStatus = .notRegistered
-    @Published private(set) var fdaState: FDAState = .unknown
-    @Published private(set) var backupPct: Double = 0
-    @Published private(set) var ejectPct: Double = 0
-    @Published private(set) var ejectAttempt: Int = 0
-    @Published private(set) var drivePresent: Bool = false
+    @Published private(set) var fdaState: FDAState = .unknown {
+        didSet {
+            if oldValue != fdaState {
+                TMEjectLog.app.debug("fdaState: \(oldValue) → \(fdaState)")
+            }
+        }
+    }
+    @Published private(set) var backupPct: Double = 0 {
+        didSet {
+            // Coarse-grained log — round to 1pt so a steady poll of 78.0→78.1→78.2 doesn't
+            // spam.
+            if Int(oldValue.rounded()) != Int(backupPct.rounded()) {
+                TMEjectLog.app.debug("backupPct: \(Int(oldValue.rounded())) → \(Int(backupPct.rounded()))")
+            }
+        }
+    }
+    @Published private(set) var ejectPct: Double = 0 {
+        didSet {
+            if Int(oldValue.rounded()) != Int(ejectPct.rounded()) {
+                TMEjectLog.app.debug("ejectPct: \(Int(oldValue.rounded())) → \(Int(ejectPct.rounded()))")
+            }
+        }
+    }
+    @Published private(set) var ejectAttempt: Int = 0 {
+        didSet {
+            if oldValue != ejectAttempt {
+                TMEjectLog.app.debug("ejectAttempt: \(oldValue) → \(ejectAttempt)")
+            }
+        }
+    }
+    @Published private(set) var drivePresent: Bool = false {
+        didSet {
+            if oldValue != drivePresent {
+                TMEjectLog.app.debug("drivePresent: \(oldValue) → \(drivePresent)")
+            }
+        }
+    }
     @Published private(set) var driveName: String?
-    @Published private(set) var lastBackupCompletedAt: Date?
+    @Published private(set) var lastBackupCompletedAt: Date? {
+        didSet {
+            if oldValue != lastBackupCompletedAt, lastBackupCompletedAt != nil {
+                backupsThisSession += 1
+            }
+        }
+    }
+
+    // Session counters surfaced by `stop()` in a final summary line.
+    private var backupsThisSession: Int = 0
+    private var ejectSuccessesThisSession: Int = 0
+    private var ejectFailuresThisSession: Int = 0
+    private var errorSamplesThisSession: [String] = []
+    private let sessionStartedAt = Date()
+    private var lastAutoEjectGateLogValue: String?
     /// Popover overlay state for the Eject & Lock ritual confirmation. nil → no overlay.
     /// 0…100 — the inner ring fills as the confirmation runs out.
     @Published var ritualConfirmPct: Double?
@@ -178,7 +231,15 @@ final class AppCoordinator: ObservableObject {
             // User flipped auto-eject OFF — clear the surface.
             lastError = nil
         }
-        TMEjectLog.app.debug("evaluateAutoEjectGate (\(reason)) autoEjectOn=\(autoEjectOn) fdaState=\(fdaState)")
+        // Dedup: only log when the (autoEjectOn, fdaState) pair changes. Identical re-evals
+        // are silent — keeps the log readable when popover .onAppear fires the gate every
+        // open. The first re-eval after the pair changes still logs (and includes the
+        // reason for context).
+        let value = "autoEjectOn=\(autoEjectOn) fdaState=\(fdaState)"
+        if value != lastAutoEjectGateLogValue {
+            TMEjectLog.app.debug("evaluateAutoEjectGate (\(reason)) \(value)")
+            lastAutoEjectGateLogValue = value
+        }
     }
 
     private func maybeSendFDANotification() {
@@ -316,6 +377,15 @@ final class AppCoordinator: ObservableObject {
     }
 
     func stop() async {
+        let elapsed = Date().timeIntervalSince(sessionStartedAt)
+        let elapsedDesc = String(format: "%.1fs", elapsed)
+        let lastThreeErrors = Array(errorSamplesThisSession.suffix(3))
+        let errSummary = lastThreeErrors.isEmpty
+            ? "none"
+            : lastThreeErrors.enumerated().map { "[\($0.offset + 1)] \($0.element)" }.joined(separator: " | ")
+        TMEjectLog.app.info(
+            "Session summary: uptime=\(elapsedDesc) backups=\(backupsThisSession) ejectsOK=\(ejectSuccessesThisSession) ejectsFAIL=\(ejectFailuresThisSession) lastErrors={\(errSummary)}"
+        )
         await observer?.stop()
         observer = nil
     }
@@ -499,6 +569,11 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func run(_ command: AppCommand) async {
+        // Single per-command payload log — uses Swift's default mirror description so
+        // associated values (URLs, lock flag, toast level/message, last-error string) are
+        // captured verbatim. Existing per-case INFO logs below stay; this is the DEBUG
+        // companion that catches everything else.
+        TMEjectLog.state.debug("Command: \(command)")
         switch command {
         case .requestPoll:
             await observer?.pokeNow()
@@ -727,6 +802,8 @@ final class AppCoordinator: ObservableObject {
                                           onAttempt: { [weak self] attempt in
             await self?.handleEjectProgress(attempt)
         })
+        if report.succeeded { ejectSuccessesThisSession += 1 }
+        else { ejectFailuresThisSession += 1 }
         if lock && report.succeeded {
             let lockResult = await locker.lockScreen()
             switch lockResult {
