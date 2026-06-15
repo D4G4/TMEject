@@ -12,7 +12,10 @@ struct TMEjectApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarPopoverView(coordinator: delegate.coordinator)
+            MenuBarPopoverView(
+                coordinator: delegate.coordinator,
+                openPreferences: { delegate.preferencesController.show() }
+            )
                 .onAppear {
                     // Closing the launch HUD on first popover open: per design, the HUD
                     // self-dismisses once the user discovers the menu bar icon.

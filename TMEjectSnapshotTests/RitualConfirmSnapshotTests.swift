@@ -14,7 +14,7 @@ final class RitualConfirmSnapshotTests: SnapshotTestCase {
                                   driveName: "Backup Drive",
                                   ritualConfirmPct: progress,
                                   fdaState: .granted)
-        let view = MenuBarPopoverView(coordinator: coord)
+        let view = MenuBarPopoverView(coordinator: coord, openPreferences: {})
         let progressLabel = "p\(Int(progress.rounded()))"
         let name = SnapshotName.plain("ritual_confirm", variant: progressLabel, theme: theme)
         assertSnapshot(of: view, named: name,

@@ -4,6 +4,11 @@ import KeyboardShortcuts
 /// Popover B — ceremonial big-glyph layout. Hero ring + drive name + a single ritual CTA.
 struct MenuBarPopoverView: View {
     @ObservedObject var coordinator: AppCoordinator
+    /// Opens the Preferences window. Injected from `TMEjectApp` so we don't have to launder
+    /// the AppDelegate through `NSApp.delegate as? AppDelegate` — that downcast silently
+    /// returns nil from inside the SwiftUI MenuBarExtra popover scope on macOS 26.x, which
+    /// is why the gear button used to do nothing.
+    let openPreferences: () -> Void
     @State private var whyExpanded = false
     /// Source of truth for the auto-eject toggle in the popover. `.onChange` below routes
     /// flips through the coordinator so FDA probing + rate-limited notifications still fire.
@@ -47,9 +52,7 @@ struct MenuBarPopoverView: View {
     private var gearButton: some View {
         Button {
             UIActionLogger.menuItemSelected("Open Settings")
-            if let delegate = NSApp.delegate as? AppDelegate {
-                delegate.preferencesController.show()
-            }
+            openPreferences()
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 13))

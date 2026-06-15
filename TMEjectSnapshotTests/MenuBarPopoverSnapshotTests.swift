@@ -11,7 +11,7 @@ final class MenuBarPopoverSnapshotTests: SnapshotTestCase {
                         theme: ColorScheme, translucent: Bool) {
         let coord = SnapshotFixtures.makeCoordinator()
         apply(coord)
-        let view = MenuBarPopoverView(coordinator: coord)
+        let view = MenuBarPopoverView(coordinator: coord, openPreferences: {})
         let name = SnapshotName.surface("popover", variant: stateName,
                                          theme: theme, translucent: translucent)
         // Popover is 300pt wide; pad height for tallest state (failed + Why? expansion).
