@@ -121,6 +121,33 @@ Things that work differently on macOS 26 (Tahoe) than the documented contract
 or than older macOS releases. Re-verify each of these on the next major OS
 update — they're the most likely places to break.
 
+### `tmutil destinationinfo`'s `ID` is NOT the filesystem volume UUID
+
+Step 4's original brief told the resolver to match `DestinationInfo.id` against
+`kDADiskDescriptionVolumeUUIDKey`. End-to-end verification on macOS 26.3.1 showed those
+are two orthogonal identifiers:
+
+- `tmutil destinationinfo -X` → `ID = 0852943E-8EC2-4386-8C31-ECE56488E8B4` (TM's
+  internal destination-registry UUID)
+- `DADiskCopyDescription` on the same mounted volume → `kDADiskDescriptionVolumeUUIDKey
+  = 8968B69C-E835-472A-9EA7-F7F6CB22A13C` (the filesystem volume UUID)
+
+Empirical `DADiskCopyDescription` dump exposes zero fields that contain the tmutil ID.
+There is no UUID match path through DiskArbitration.
+
+**Fix**: match by tmutil's own `MountPoint` field — `tmutil destinationinfo -X` already
+includes the volume's mount path, so the resolver reads it directly from the plist and
+asks DA to describe the volume at that path (BSD name + volume name). No matching, no
+enumeration. dbdb6cb shipped a name-match fallback as an interim; the MountPoint path
+replaced it because tmutil already knows the answer.
+
+If `MountPoint` is absent the resolver returns nil rather than guessing — that means the
+destination isn't currently mounted, which is the same outcome as the old code for an
+unmounted drive. Test coverage: `DestinationResolverTests` covers MountPoint present
+(success), absent (nil), path missing (nil), DA missing description (nil), DA missing
+BSD (nil), DA missing volume UUID (still success — UUID isn't required for the unmount
+syscall, BSD + path are).
+
 ### Snapshot path is written BEFORE TMEject's first confirming-phase poll on macOS 26.3.1
 
 **Fixed in Step 12.7+13 fixup** by moving the baseline capture from `confirmingEntered`

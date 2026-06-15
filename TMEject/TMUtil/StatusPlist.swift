@@ -63,6 +63,27 @@ struct DestinationInfo: Equatable, Sendable {
     let name: String
     let kind: String
     let lastDestination: Bool
+    /// Volume mount point as reported by `tmutil destinationinfo -X` (the `MountPoint` key).
+    /// Used by `DestinationResolver` to identify the live volume — TM's destination registry
+    /// `id` is NOT the filesystem volume UUID on macOS 26.x, so we can't match against DA's
+    /// volume UUID. tmutil already knows where the destination is mounted; use its answer
+    /// directly. Nil when the destination isn't currently mounted, or for network
+    /// destinations that haven't been auto-mounted yet.
+    let mountPoint: URL?
+
+    init(
+        id: UUID,
+        name: String,
+        kind: String,
+        lastDestination: Bool,
+        mountPoint: URL? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.lastDestination = lastDestination
+        self.mountPoint = mountPoint
+    }
 
     static func parseList(plistData: Data) throws -> [DestinationInfo] {
         let any: Any
@@ -85,7 +106,14 @@ struct DestinationInfo: Equatable, Sendable {
                 if let b = dict["LastDestination"] as? Bool { return b }
                 return false
             }()
-            return DestinationInfo(id: uuid, name: name, kind: kind, lastDestination: lastDest)
+            // tmutil reports the mount as a path string under `MountPoint`. No known legacy
+            // alias on supported macOS versions — leave it nil if absent rather than guessing.
+            let mountPoint: URL? = {
+                guard let path = dict["MountPoint"] as? String, !path.isEmpty else { return nil }
+                return URL(fileURLWithPath: path)
+            }()
+            return DestinationInfo(id: uuid, name: name, kind: kind,
+                                    lastDestination: lastDest, mountPoint: mountPoint)
         }
     }
 }

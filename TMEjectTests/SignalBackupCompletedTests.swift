@@ -34,7 +34,7 @@ final class SignalBackupCompletedTests: XCTestCase {
             ejector: Ejector(unmount: unmount, lsof: FakeLsofProbe(),
                              clock: FakeClock(),
                              schedule: EjectorRetrySchedule(backoffsSeconds: [0])),
-            resolver: DestinationResolver(bridge: bridge),
+            resolver: DestinationResolver(bridge: bridge, fileExists: AlwaysExistsFileProbe()),
             defaults: defaults,
             locker: FakeScreenLocker(),
             confirmDialog: FakeConfirmDialog(),
@@ -51,7 +51,8 @@ final class SignalBackupCompletedTests: XCTestCase {
         await unmount.enqueue(.success)
         let tmutil = FakeTMUtilClient()
         await tmutil.enqueueDestinationInfo(.success([
-            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true)
+            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true,
+                            mountPoint: URL(fileURLWithPath: "/Volumes/Backup"))
         ]))
         let coord = makeCoordinator(autoEjectOn: true, fdaState: .granted,
                                      unmount: unmount, tmutil: tmutil)

@@ -56,7 +56,7 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
             (URL(fileURLWithPath: "/Volumes/Backup"),
              VolumeDADescription(volumeUUID: backupUUID, bsdName: "disk4s2", volumeName: "Backup"))
         ])
-        let resolver = DestinationResolver(bridge: bridge)
+        let resolver = DestinationResolver(bridge: bridge, fileExists: AlwaysExistsFileProbe())
         let ejector = Ejector(unmount: unmount, lsof: FakeLsofProbe(),
                               clock: FakeClock(),
                               schedule: EjectorRetrySchedule(backoffsSeconds: [0]))
@@ -65,7 +65,8 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
         let tmutil = FakeTMUtilClient()
         if destinationInfoEnqueue {
             await tmutil.enqueueDestinationInfo(.success([
-                DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true)
+                DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true,
+                                mountPoint: URL(fileURLWithPath: "/Volumes/Backup"))
             ]))
         }
         let coord = AppCoordinator(

@@ -2,7 +2,7 @@ import Foundation
 @preconcurrency import DiskArbitration
 
 struct ResolvedDestination: Equatable, Sendable {
-    let volumeUUID: UUID
+    let volumeUUID: UUID?
     let bsdName: String
     let volumeURL: URL
     let volumeName: String?
@@ -23,8 +23,6 @@ struct LiveDiskArbitrationBridge: DiskArbitrationBridge {
     private let session: DASession
 
     init() {
-        // DASessionCreate returns nil only under OOM, in which case the caller can't recover.
-        // Crashing here surfaces the real OS condition rather than masking it as "no destinations."
         guard let s = DASessionCreate(kCFAllocatorDefault) else {
             fatalError("DASessionCreate returned nil")
         }
@@ -47,14 +45,11 @@ struct LiveDiskArbitrationBridge: DiskArbitrationBridge {
             return nil
         }
         let uuidString: String? = {
-            // The framework returns a CFUUIDRef under kDADiskDescriptionVolumeUUIDKey; round-trip
-            // through CFUUIDCreateString to get its canonical string form.
             guard let raw = desc[kDADiskDescriptionVolumeUUIDKey as String] else { return nil }
             let cfUUID = raw as! CFUUID
             return CFUUIDCreateString(kCFAllocatorDefault, cfUUID) as String?
         }()
         let bsdName: String? = {
-            // BSD name comes back as a CFString like "disk4s2". Caller never prepends /dev/.
             desc[kDADiskDescriptionMediaBSDNameKey as String] as? String
         }()
         let volumeName: String? = {
@@ -68,30 +63,76 @@ struct LiveDiskArbitrationBridge: DiskArbitrationBridge {
     }
 }
 
+/// Existence probe for the mount point, abstracted so tests don't depend on the real fs.
+protocol FileExistsProbe: Sendable {
+    func exists(atPath path: String) -> Bool
+}
+
+struct LiveFileExistsProbe: FileExistsProbe {
+    func exists(atPath path: String) -> Bool {
+        FileManager.default.fileExists(atPath: path)
+    }
+}
+
 struct DestinationResolver: Sendable {
     let bridge: DiskArbitrationBridge
+    let fileExists: FileExistsProbe
 
-    init(bridge: DiskArbitrationBridge = LiveDiskArbitrationBridge()) {
+    init(
+        bridge: DiskArbitrationBridge = LiveDiskArbitrationBridge(),
+        fileExists: FileExistsProbe = LiveFileExistsProbe()
+    ) {
         self.bridge = bridge
+        self.fileExists = fileExists
     }
 
-    func resolve(destinationID: UUID) -> ResolvedDestination? {
-        for url in bridge.mountedVolumeURLs() {
-            guard let desc = bridge.description(forVolumeAt: url) else { continue }
-            guard let volUUID = desc.volumeUUID, volUUID == destinationID else { continue }
-            guard let bsd = desc.bsdName else {
-                TMEjectLog.observer.error(
-                    "DestinationResolver: UUID match for \(destinationID) at \(url.path) but missing BSD name"
-                )
-                continue
-            }
-            return ResolvedDestination(
-                volumeUUID: volUUID,
-                bsdName: bsd,
-                volumeURL: url,
-                volumeName: desc.volumeName
+    /// Resolves a Time Machine destination to its mounted volume using `tmutil`'s own
+    /// `MountPoint` field — tmutil already knows where the destination is mounted; we don't
+    /// need to derive it.
+    ///
+    /// Step 4's original design matched `DestinationInfo.id` against `kDADiskDescriptionVolumeUUIDKey`.
+    /// End-to-end backup verification on macOS 26.3.1 revealed those are two ORTHOGONAL
+    /// identifiers — the tmutil registry `ID` is not the filesystem volume UUID. Empirical
+    /// `DADiskCopyDescription` dump on a configured TM drive exposes zero fields that
+    /// contain the tmutil `ID`. The fallback to name matching that landed in dbdb6cb worked
+    /// but was solving a problem that didn't exist: `tmutil destinationinfo -X` already
+    /// includes `MountPoint`. Use that.
+    ///
+    /// Returns nil when:
+    /// - `mountPoint` is nil (tmutil didn't report a mount — destination not currently mounted).
+    /// - The mount path doesn't exist on disk (drive was yanked between the tmutil read and
+    ///   the resolver call).
+    /// - DiskArbitration can't describe the volume (very unusual — would indicate the path
+    ///   isn't a real volume root, or DA permissions broke).
+    /// - DA returns no `MediaBSDName` (we need it for the unmount syscall).
+    ///
+    /// No name-match fallback: if MountPoint isn't there, surface the failure cleanly rather
+    /// than guessing. The dbdb6cb name-match path is gone.
+    func resolve(mountPoint: URL?) -> ResolvedDestination? {
+        guard let mountPoint else { return nil }
+        guard fileExists.exists(atPath: mountPoint.path) else {
+            TMEjectLog.observer.error(
+                "DestinationResolver: tmutil reported MountPoint \(mountPoint.path) but the path doesn't exist"
             )
+            return nil
         }
-        return nil
+        guard let desc = bridge.description(forVolumeAt: mountPoint) else {
+            TMEjectLog.observer.error(
+                "DestinationResolver: DA returned no description for \(mountPoint.path)"
+            )
+            return nil
+        }
+        guard let bsd = desc.bsdName else {
+            TMEjectLog.observer.error(
+                "DestinationResolver: DA description for \(mountPoint.path) missing BSD name"
+            )
+            return nil
+        }
+        return ResolvedDestination(
+            volumeUUID: desc.volumeUUID,
+            bsdName: bsd,
+            volumeURL: mountPoint,
+            volumeName: desc.volumeName
+        )
     }
 }

@@ -296,7 +296,7 @@ final class AppCoordinator: ObservableObject {
                 return
             }
             driveName = dest.name
-            drivePresent = (resolver.resolve(destinationID: dest.id) != nil)
+            drivePresent = (resolver.resolve(mountPoint: dest.mountPoint) != nil)
         }
     }
 
@@ -679,8 +679,8 @@ final class AppCoordinator: ObservableObject {
             guard let destination = destinations.first(where: { $0.lastDestination }) ?? destinations.first else {
                 return "No Time Machine destination configured."
             }
-            guard let resolved = resolver.resolve(destinationID: destination.id) else {
-                return "Destination \(destination.name) (UUID \(destination.id.uuidString)) is not currently mounted."
+            guard let resolved = resolver.resolve(mountPoint: destination.mountPoint) else {
+                return "Destination \(destination.name) (UUID \(destination.id.uuidString)) is not currently mounted (tmutil MountPoint=\(destination.mountPoint?.path ?? "nil"))."
             }
             return "Would eject \(resolved.volumeName ?? resolved.bsdName) at \(resolved.volumeURL.path) (BSD \(resolved.bsdName))."
         } catch {
@@ -703,9 +703,10 @@ final class AppCoordinator: ObservableObject {
                                                   errorSummary: "No Time Machine destination configured"))
             return
         }
-        guard let resolved = resolver.resolve(destinationID: destination.id) else {
+        guard let resolved = resolver.resolve(mountPoint: destination.mountPoint) else {
+            let mp = destination.mountPoint?.path ?? "<nil>"
             await deliver(.ejectAttemptCompleted(success: false,
-                                                  errorSummary: "Destination \(destination.name) not mounted"))
+                                                  errorSummary: "Destination \(destination.name) not mounted (tmutil MountPoint=\(mp))"))
             return
         }
         lastResolvedDestination = resolved

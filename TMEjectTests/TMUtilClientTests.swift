@@ -104,6 +104,7 @@ final class DestinationInfoTests: XCTestCase {
                     <key>ID</key><string>0852943E-8EC2-4386-8C31-ECE56488E8B4</string>
                     <key>Name</key><string>Daksh's Time Machine</string>
                     <key>LastDestination</key><integer>1</integer>
+                    <key>MountPoint</key><string>/Volumes/Daksh's Time Machine</string>
                 </dict>
             </array>
         </dict>
@@ -115,6 +116,56 @@ final class DestinationInfoTests: XCTestCase {
         XCTAssertEqual(dests[0].name, "Daksh's Time Machine")
         XCTAssertEqual(dests[0].kind, "Local")
         XCTAssertTrue(dests[0].lastDestination)
+        XCTAssertEqual(dests[0].mountPoint,
+                       URL(fileURLWithPath: "/Volumes/Daksh's Time Machine"))
+    }
+
+    // tmutil omits `MountPoint` when the destination isn't currently mounted (drive
+    // unplugged, network destination not yet auto-mounted). Parser should yield nil rather
+    // than synthesizing a path.
+    func testParsesDestinationWithoutMountPoint() throws {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0">
+        <dict>
+            <key>Destinations</key>
+            <array>
+                <dict>
+                    <key>ID</key><string>0852943E-8EC2-4386-8C31-ECE56488E8B4</string>
+                    <key>Name</key><string>Daksh's Time Machine</string>
+                    <key>Kind</key><string>Local</string>
+                </dict>
+            </array>
+        </dict>
+        </plist>
+        """
+        let dests = try DestinationInfo.parseList(plistData: Data(xml.utf8))
+        XCTAssertEqual(dests.count, 1)
+        XCTAssertNil(dests[0].mountPoint, "absent MountPoint → nil, not '/'")
+    }
+
+    // Empty-string MountPoint (defensive — shouldn't happen but tmutil's plist isn't a
+    // strict contract) must NOT parse as URL(fileURLWithPath: "") which would resolve to
+    // the current working directory.
+    func testEmptyMountPointStringIsTreatedAsAbsent() throws {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0">
+        <dict>
+            <key>Destinations</key>
+            <array>
+                <dict>
+                    <key>ID</key><string>0852943E-8EC2-4386-8C31-ECE56488E8B4</string>
+                    <key>Name</key><string>X</string>
+                    <key>MountPoint</key><string></string>
+                </dict>
+            </array>
+        </dict>
+        </plist>
+        """
+        let dests = try DestinationInfo.parseList(plistData: Data(xml.utf8))
+        XCTAssertEqual(dests.count, 1)
+        XCTAssertNil(dests[0].mountPoint)
     }
 
     func testAcceptsLegacyDestinationIDKey() throws {

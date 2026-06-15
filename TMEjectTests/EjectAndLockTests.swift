@@ -20,7 +20,7 @@ final class EjectAndLockTests: XCTestCase {
             (URL(fileURLWithPath: "/Volumes/Backup"),
              VolumeDADescription(volumeUUID: backupUUID, bsdName: "disk4s2", volumeName: "Backup"))
         ])
-        let resolver = DestinationResolver(bridge: bridge)
+        let resolver = DestinationResolver(bridge: bridge, fileExists: AlwaysExistsFileProbe())
         let ejector = Ejector(
             unmount: unmount,
             lsof: FakeLsofProbe(),
@@ -53,7 +53,8 @@ final class EjectAndLockTests: XCTestCase {
                                     locker: locker, clock: clock,
                                     unmount: unmount)
         await tmutil.enqueueDestinationInfo(.success([
-            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true)
+            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true,
+                            mountPoint: URL(fileURLWithPath: "/Volumes/Backup"))
         ]))
         // Drive into .ejecting via direct event delivery on a background Task — the call
         // would otherwise hang inside the unmount bridge's 5s sleep.
@@ -72,7 +73,8 @@ final class EjectAndLockTests: XCTestCase {
     func testEjectAndLockFromIdle_LocksOnSuccess() async {
         let tmutil = FakeTMUtilClient()
         await tmutil.enqueueDestinationInfo(.success([
-            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true)
+            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true,
+                            mountPoint: URL(fileURLWithPath: "/Volumes/Backup"))
         ]))
         let unmount = FakeUnmountBridge()
         await unmount.enqueue(.success)
@@ -115,7 +117,8 @@ final class EjectAndLockTests: XCTestCase {
     func testEjectAndLockFromBackingUp_PromptConfirmed_StopsThenEjectsThenLocks() async {
         let tmutil = FakeTMUtilClient()
         await tmutil.enqueueDestinationInfo(.success([
-            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true)
+            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true,
+                            mountPoint: URL(fileURLWithPath: "/Volumes/Backup"))
         ]))
         // waitForBackupToStop polls; first call says still running, second says stopped.
         await tmutil.enqueueStatus(.success(StatusPlist(running: true, backupPhase: "Copying")))
@@ -166,7 +169,8 @@ final class EjectAndLockTests: XCTestCase {
     func testEjectAndLock_EjectBusyAllRetries_LockNotFired() async {
         let tmutil = FakeTMUtilClient()
         await tmutil.enqueueDestinationInfo(.success([
-            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true)
+            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true,
+                            mountPoint: URL(fileURLWithPath: "/Volumes/Backup"))
         ]))
         let unmount = FakeUnmountBridge()
         await unmount.enqueue(.busy(message: "busy"))
@@ -190,7 +194,8 @@ final class EjectAndLockTests: XCTestCase {
         let unmount = FakeUnmountBridge()
         await unmount.enqueue(.busy(message: "held"))
         await tmutil.enqueueDestinationInfo(.success([
-            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true)
+            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true,
+                            mountPoint: URL(fileURLWithPath: "/Volumes/Backup"))
         ]))
 
         let coord = makeCoordinator(tmutil: tmutil, confirm: FakeConfirmDialog(),
@@ -205,7 +210,8 @@ final class EjectAndLockTests: XCTestCase {
         let hungBridge = FakeUnmountBridge()
         await hungBridge.setHangForever()
         await tmutil.enqueueDestinationInfo(.success([
-            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true)
+            DestinationInfo(id: backupUUID, name: "Backup", kind: "Local", lastDestination: true,
+                            mountPoint: URL(fileURLWithPath: "/Volumes/Backup"))
         ]))
         let coord2 = makeCoordinator(tmutil: tmutil, confirm: FakeConfirmDialog(),
                                      locker: FakeScreenLocker(), clock: FakeClock(),

@@ -3,64 +3,96 @@ import XCTest
 
 final class DestinationResolverTests: XCTestCase {
 
-    private let backupUUID = UUID(uuidString: "0852943E-8EC2-4386-8C31-ECE56488E8B4")!
-    private let otherUUID  = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+    private let backupURL = URL(fileURLWithPath: "/Volumes/Daksh's Time Machine")
+    private let backupUUID = UUID(uuidString: "8968B69C-E835-472A-9EA7-F7F6CB22A13C")!
 
-    func testReturnsNilWhenDestinationNotMounted() {
+    // tmutil reports MountPoint → resolver returns it via DA.
+    func testReturnsVolumeWhenMountPointExistsAndDAMatches() {
         let bridge = FakeDiskArbitrationBridge(volumes: [
-            (URL(fileURLWithPath: "/"),
-             VolumeDADescription(volumeUUID: otherUUID, bsdName: "disk1s5", volumeName: "Macintosh HD"))
+            (backupURL,
+             VolumeDADescription(volumeUUID: backupUUID, bsdName: "disk14s2",
+                                  volumeName: "Daksh's Time Machine"))
         ])
-        let resolver = DestinationResolver(bridge: bridge)
-        XCTAssertNil(resolver.resolve(destinationID: backupUUID))
-    }
-
-    func testReturnsMatchingVolumeByUUID() {
-        let bridge = FakeDiskArbitrationBridge(volumes: [
-            (URL(fileURLWithPath: "/"),
-             VolumeDADescription(volumeUUID: otherUUID, bsdName: "disk1s5", volumeName: "Macintosh HD")),
-            (URL(fileURLWithPath: "/Volumes/Backup"),
-             VolumeDADescription(volumeUUID: backupUUID, bsdName: "disk4s2", volumeName: "Backup"))
-        ])
-        let resolver = DestinationResolver(bridge: bridge)
-        let resolved = resolver.resolve(destinationID: backupUUID)
+        let resolver = DestinationResolver(
+            bridge: bridge,
+            fileExists: FakeFileExistsProbe(existing: [backupURL])
+        )
+        let resolved = resolver.resolve(mountPoint: backupURL)
+        XCTAssertEqual(resolved?.volumeURL, backupURL)
+        XCTAssertEqual(resolved?.bsdName, "disk14s2")
+        XCTAssertEqual(resolved?.volumeName, "Daksh's Time Machine")
         XCTAssertEqual(resolved?.volumeUUID, backupUUID)
-        XCTAssertEqual(resolved?.bsdName, "disk4s2")
-        XCTAssertEqual(resolved?.volumeURL, URL(fileURLWithPath: "/Volumes/Backup"))
-        XCTAssertEqual(resolved?.volumeName, "Backup")
     }
 
-    func testDoesNotMatchByNameWhenUUIDDiffers() {
-        // Two drives named "Backup", different UUIDs: must NOT collide.
+    // tmutil omitted MountPoint (drive not currently mounted, network destination, etc.).
+    func testReturnsNilWhenMountPointAbsent() {
         let bridge = FakeDiskArbitrationBridge(volumes: [
-            (URL(fileURLWithPath: "/Volumes/Backup"),
-             VolumeDADescription(volumeUUID: otherUUID, bsdName: "disk5s2", volumeName: "Backup")),
-            (URL(fileURLWithPath: "/Volumes/Backup 1"),
-             VolumeDADescription(volumeUUID: backupUUID, bsdName: "disk4s2", volumeName: "Backup"))
+            (backupURL,
+             VolumeDADescription(volumeUUID: backupUUID, bsdName: "disk14s2",
+                                  volumeName: "Daksh's Time Machine"))
         ])
-        let resolver = DestinationResolver(bridge: bridge)
-        let resolved = resolver.resolve(destinationID: backupUUID)
-        XCTAssertEqual(resolved?.bsdName, "disk4s2")
-        XCTAssertEqual(resolved?.volumeURL.path, "/Volumes/Backup 1")
+        let resolver = DestinationResolver(
+            bridge: bridge,
+            fileExists: AlwaysExistsFileProbe()
+        )
+        XCTAssertNil(resolver.resolve(mountPoint: nil))
     }
 
-    func testSkipsVolumesWithNoDescription() {
+    // tmutil's MountPoint string survived but the drive was yanked between the tmutil read
+    // and the resolver call. Don't fall back to name matching — surface the failure.
+    func testReturnsNilWhenMountPointPathDoesNotExist() {
         let bridge = FakeDiskArbitrationBridge(volumes: [
-            (URL(fileURLWithPath: "/Volumes/Camera"), nil),
-            (URL(fileURLWithPath: "/Volumes/Backup"),
-             VolumeDADescription(volumeUUID: backupUUID, bsdName: "disk4s2", volumeName: "Backup"))
+            (backupURL,
+             VolumeDADescription(volumeUUID: backupUUID, bsdName: "disk14s2",
+                                  volumeName: "Daksh's Time Machine"))
         ])
-        let resolver = DestinationResolver(bridge: bridge)
-        XCTAssertEqual(resolver.resolve(destinationID: backupUUID)?.bsdName, "disk4s2")
+        let resolver = DestinationResolver(
+            bridge: bridge,
+            fileExists: FakeFileExistsProbe(existing: []) // nothing exists
+        )
+        XCTAssertNil(resolver.resolve(mountPoint: backupURL))
     }
 
-    func testSkipsVolumesMissingBSDNameEvenIfUUIDMatches() {
-        // Should not return a half-resolved destination — eject needs the BSD name.
+    // Path exists but DA has nothing to say about it (very unusual — would indicate the
+    // path isn't a real volume root, or a DA permission collapse).
+    func testReturnsNilWhenDAReturnsNoDescription() {
+        let bridge = FakeDiskArbitrationBridge(volumes: []) // no volumes known to DA
+        let resolver = DestinationResolver(
+            bridge: bridge,
+            fileExists: FakeFileExistsProbe(existing: [backupURL])
+        )
+        XCTAssertNil(resolver.resolve(mountPoint: backupURL))
+    }
+
+    // DA returned a description but no BSD name → can't unmount → refuse to resolve.
+    func testReturnsNilWhenDABSDNameMissing() {
         let bridge = FakeDiskArbitrationBridge(volumes: [
-            (URL(fileURLWithPath: "/Volumes/Backup"),
-             VolumeDADescription(volumeUUID: backupUUID, bsdName: nil, volumeName: "Backup"))
+            (backupURL,
+             VolumeDADescription(volumeUUID: backupUUID, bsdName: nil,
+                                  volumeName: "Daksh's Time Machine"))
         ])
-        let resolver = DestinationResolver(bridge: bridge)
-        XCTAssertNil(resolver.resolve(destinationID: backupUUID))
+        let resolver = DestinationResolver(
+            bridge: bridge,
+            fileExists: FakeFileExistsProbe(existing: [backupURL])
+        )
+        XCTAssertNil(resolver.resolve(mountPoint: backupURL))
+    }
+
+    // Volume UUID can legitimately be missing (some DA descriptions don't expose it) —
+    // resolver shouldn't reject just because of that. BSD + path are what eject needs.
+    func testReturnsResolvedEvenWhenDAVolumeUUIDMissing() {
+        let bridge = FakeDiskArbitrationBridge(volumes: [
+            (backupURL,
+             VolumeDADescription(volumeUUID: nil, bsdName: "disk14s2",
+                                  volumeName: "Daksh's Time Machine"))
+        ])
+        let resolver = DestinationResolver(
+            bridge: bridge,
+            fileExists: FakeFileExistsProbe(existing: [backupURL])
+        )
+        let resolved = resolver.resolve(mountPoint: backupURL)
+        XCTAssertNotNil(resolved)
+        XCTAssertEqual(resolved?.bsdName, "disk14s2")
+        XCTAssertNil(resolved?.volumeUUID)
     }
 }
