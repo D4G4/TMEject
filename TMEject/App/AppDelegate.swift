@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }()
     private let onboarding = OnboardingWindowController()
     private let launchHUD = LaunchHUDWindowController()
+    private let menuBarHelp = MenuBarHelpWindowController()
     private var logStreamObserver: LogStreamObserver?
 
     override init() {
@@ -116,8 +117,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 self?.coordinator.requestPokeNow()
             },
             onCantFind: { [weak self] in
+                guard let self else { return }
+                // Drop to .accessory now; the help controller will bump back to .regular
+                // when it opens its window, then back to .accessory on close.
                 NSApp.setActivationPolicy(.accessory)
-                self?.launchHUD.showCantFindAlert()
+                self.menuBarHelp.show(onOpenPreferences: { [weak self] in
+                    self?.preferencesController.show()
+                })
             }
         )
     }

@@ -74,14 +74,4 @@ final class LaunchHUDWindowController {
     }
 
     var isShowing: Bool { window != nil }
-
-    func showCantFindAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Looking for TMEject"
-        alert.informativeText = "TMEject's icon usually appears on the right side of your menu bar. If it's hidden, check Control Center or a third-party menu bar manager like Bartender or iBar."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
-        _ = alert.runModal()
-    }
 }
