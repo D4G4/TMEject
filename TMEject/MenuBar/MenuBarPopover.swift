@@ -10,8 +10,9 @@ struct MenuBarPopoverView: View {
     /// is why the gear button used to do nothing.
     let openPreferences: () -> Void
     @State private var whyExpanded = false
-    /// Source of truth for the auto-eject toggle in the popover. `.onChange` below routes
-    /// flips through the coordinator so FDA probing + rate-limited notifications still fire.
+    /// Read-only mirror of the auto-eject setting — used by the FDA pill to decide whether
+    /// to nag about Full Disk Access. The toggle itself lives in Settings now; the bottom
+    /// row's right slot is the Quit button.
     @AppStorage(SettingsKey.autoEjectEnabled) private var autoEjectEnabled = true
 
     var body: some View {
@@ -30,9 +31,6 @@ struct MenuBarPopoverView: View {
             coordinator.refreshLoginItemStatus()
             coordinator.refreshFDAState()
             coordinator.refreshDrivePresence()
-        }
-        .onChange(of: autoEjectEnabled) { _, newValue in
-            coordinator.respondToAutoEjectChange(newValue)
         }
     }
 
@@ -217,7 +215,7 @@ struct MenuBarPopoverView: View {
                     .foregroundStyle(ejectNowDisabled ? Color.blue.opacity(0.45) : Color.blue)
                     .disabled(ejectNowDisabled)
                     Spacer()
-                    autoEjectToggle
+                    quitButton
                 }
                 .padding(.top, 2)
             }
@@ -268,17 +266,18 @@ struct MenuBarPopoverView: View {
             .tracking(1)
     }
 
-    private var autoEjectToggle: some View {
-        HStack(spacing: 7) {
-            Text("Auto-eject")
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-            Toggle("", isOn: $autoEjectEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .scaleEffect(0.92)
+    /// Bottom-right action — terminates the app. Matches the "Eject now" treatment on the
+    /// left (12pt medium plain text) so the row reads as a balanced pair. Auto-eject lives
+    /// in Settings; the popover keeps only verbs that act on "right now."
+    private var quitButton: some View {
+        Button("Quit") {
+            UIActionLogger.menuItemSelected("Quit")
+            NSApp.terminate(nil)
         }
+        .buttonStyle(.plain)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.secondary)
+        .keyboardShortcut("q", modifiers: .command)
     }
 
     // MARK: - Why? disclosure
