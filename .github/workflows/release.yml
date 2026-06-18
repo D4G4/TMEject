@@ -35,7 +35,7 @@ jobs:
           echo "Releasing version $VERSION"
 
       - name: Install tools
-        run: brew install xcodegen xcbeautify
+        run: brew install xcodegen xcbeautify create-dmg
 
       # Import the Developer ID Application certificate into a fresh
       # temporary keychain. Pattern from Apple's docs + the standard
@@ -119,6 +119,7 @@ jobs:
           name: TMEject-release-${{ steps.version.outputs.value }}
           path: |
             releases/TMEject-${{ steps.version.outputs.value }}.zip
+            releases/TMEject-${{ steps.version.outputs.value }}.dmg
             releases/appcast.xml
 
   # ── GitHub Release ───────────────────────────────────────────────
@@ -142,6 +143,7 @@ jobs:
           # so they don't appear as "Latest release" on the repo home page.
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
+            artifacts/TMEject-${{ needs.macos.outputs.version }}.dmg
             artifacts/TMEject-${{ needs.macos.outputs.version }}.zip
 
   # ── Publish to gh-pages (the live download + appcast) ────────────
@@ -161,12 +163,14 @@ jobs:
           name: TMEject-release-${{ needs.macos.outputs.version }}
           path: artifacts
 
-      - name: Stage download + appcast
+      - name: Stage downloads + appcast
         run: |
           set -e
           mkdir -p downloads
+          cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.dmg" "downloads/TMEject-${{ needs.macos.outputs.version }}.dmg"
           cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.zip" "downloads/TMEject-${{ needs.macos.outputs.version }}.zip"
-          # Versionless alias for the website hero CTA
+          # Versionless aliases for the website hero CTA and Sparkle.
+          cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.dmg" "downloads/TMEject-latest.dmg"
           cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.zip" "downloads/TMEject-latest.zip"
           cp "artifacts/appcast.xml" "appcast.xml"
 

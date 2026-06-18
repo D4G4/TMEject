@@ -43,6 +43,7 @@ EXPORT_DIR="build/export"
 APP_PATH="${EXPORT_DIR}/TMEject.app"
 RELEASES_DIR="releases"
 ZIP_PATH="${RELEASES_DIR}/TMEject-${VERSION}.zip"
+DMG_PATH="${RELEASES_DIR}/TMEject-${VERSION}.dmg"
 APPCAST_PATH="${RELEASES_DIR}/appcast.xml"
 
 # ---- preflight ----
@@ -151,12 +152,34 @@ echo "==> stapler staple"
 xcrun stapler staple "${APP_PATH}"
 xcrun stapler validate "${APP_PATH}"
 
-# ---- final user-facing zip ----
+# ---- final user-facing zip (kept for Sparkle delta updates) ----
 rm -f "${ZIP_PATH}"
 ditto -c -k --keepParent "${APP_PATH}" "${ZIP_PATH}"
-SHA="$(shasum -a 256 "${ZIP_PATH}" | awk '{print $1}')"
+ZIP_SHA="$(shasum -a 256 "${ZIP_PATH}" | awk '{print $1}')"
 echo "==> Wrote ${ZIP_PATH}"
-echo "    sha256 ${SHA}"
+echo "    sha256 ${ZIP_SHA}"
+
+# ---- DMG for first-time downloads ----
+rm -f "${DMG_PATH}"
+if ! command -v create-dmg >/dev/null 2>&1; then
+    echo "ERROR: create-dmg not found. brew install create-dmg." >&2
+    exit 68
+fi
+echo "==> create-dmg ${DMG_PATH}"
+create-dmg \
+    --volname "TMEject ${VERSION}" \
+    --window-pos 200 200 \
+    --window-size 540 360 \
+    --icon-size 100 \
+    --icon "TMEject.app" 150 175 \
+    --hide-extension "TMEject.app" \
+    --app-drop-link 390 175 \
+    --no-internet-enable \
+    "${DMG_PATH}" \
+    "${APP_PATH}"
+DMG_SHA="$(shasum -a 256 "${DMG_PATH}" | awk '{print $1}')"
+echo "==> Wrote ${DMG_PATH}"
+echo "    sha256 ${DMG_SHA}"
 
 # ---- appcast ----
 echo "==> generate_appcast ${RELEASES_DIR}"
