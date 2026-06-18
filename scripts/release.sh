@@ -67,11 +67,21 @@ if ! xcrun notarytool history --keychain-profile "${NOTARY_PROFILE}" >/dev/null 
     exit 66
 fi
 
-# 3. generate_appcast must be available — install from Sparkle's bin/.
-if ! command -v generate_appcast >/dev/null 2>&1; then
-    echo "ERROR: generate_appcast not found on PATH." >&2
-    echo "       Download Sparkle, copy bin/generate_appcast into /usr/local/bin." >&2
-    echo "       See docs/release-setup.md." >&2
+# 3. generate_appcast must be resolvable. Try PATH, then SPM artifacts in
+#    DerivedData (after first build), then ~/.local/sparkle-2.9.2/.
+GENERATE_APPCAST="$(command -v generate_appcast 2>/dev/null || true)"
+if [[ -z "${GENERATE_APPCAST}" ]]; then
+    for cache in "$HOME/Library/Developer/Xcode/DerivedData" "$HOME/Library/Caches/org.swift.swiftpm"; do
+        [[ -d "$cache" ]] || continue
+        FOUND=$(find "$cache" -type f -name generate_appcast -path "*Sparkle*/bin/generate_appcast" 2>/dev/null | head -1)
+        [[ -n "$FOUND" ]] && GENERATE_APPCAST="$FOUND" && break
+    done
+fi
+[[ -z "${GENERATE_APPCAST}" ]] && [[ -x "$HOME/.local/sparkle-2.9.2/bin/generate_appcast" ]] && GENERATE_APPCAST="$HOME/.local/sparkle-2.9.2/bin/generate_appcast"
+if [[ -z "${GENERATE_APPCAST}" ]]; then
+    echo "ERROR: generate_appcast not found." >&2
+    echo "       Build the app once so Xcode resolves the Sparkle SPM package," >&2
+    echo "       or extract Sparkle to ~/.local/sparkle-2.9.2/." >&2
     exit 67
 fi
 
@@ -150,7 +160,7 @@ echo "    sha256 ${SHA}"
 
 # ---- appcast ----
 echo "==> generate_appcast ${RELEASES_DIR}"
-generate_appcast "${RELEASES_DIR}"
+"${GENERATE_APPCAST}" "${RELEASES_DIR}"
 if [[ ! -f "${APPCAST_PATH}" ]]; then
     echo "ERROR: appcast.xml not written at ${APPCAST_PATH}" >&2
     exit 72
