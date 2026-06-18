@@ -7,7 +7,9 @@
 #   1. Sparkle EdDSA keys: `generate_keys` (Sparkle CLI), private in Keychain.
 #      Public half pasted into project.yml's INFOPLIST_KEY_SUPublicEDKey field.
 #   2. Developer ID Application certificate installed in login keychain.
-#   3. `xcrun notarytool store-credentials TMEjectNotary` configured.
+#   3. `xcrun notarytool store-credentials AC_NOTARY` configured.
+#      (Reuses the same App Store Connect API key profile as Blink — already
+#      set up in this developer's login keychain.)
 #
 # Usage:
 #   ./scripts/release.sh <version>
@@ -34,8 +36,8 @@ ROOT="$(pwd)"
 
 # ---- knobs (override via env) ----
 SCHEME="${TMEJECT_SCHEME:-TMEject}"
-TEAM_ID="${TMEJECT_TEAM_ID:-}"          # required if not set in Xcode Team
-NOTARY_PROFILE="${TMEJECT_NOTARY_PROFILE:-TMEjectNotary}"
+TEAM_ID="${TMEJECT_TEAM_ID:-6V6FZW3FFN}"
+NOTARY_PROFILE="${TMEJECT_NOTARY_PROFILE:-AC_NOTARY}"
 ARCHIVE_PATH="build/TMEject.xcarchive"
 EXPORT_DIR="build/export"
 APP_PATH="${EXPORT_DIR}/TMEject.app"
