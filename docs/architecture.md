@@ -309,6 +309,81 @@ Lock failure does NOT downgrade the eject to a failure — the eject did succeed
 Lock failure surfaces via the `lastError` line; the user can manually lock from
 the menu bar / Control Center.
 
+## Foreign TM drive detection
+
+Use case: one Thunderbolt dock + multiple Macs sharing it. Plug the cable into
+this Mac while another Mac's Time Machine drive is on the dock and macOS will
+happily mount it. We want the wrong-Mac drive to auto-eject before Spotlight
+starts indexing it or anything writes to it.
+
+A drive is "foreign" iff BOTH:
+1. It's a Time Machine drive (configured as a TM destination on SOME Mac).
+2. It's NOT in this Mac's `tmutil destinationinfo -X` `MountPoint` set.
+
+### "Is this a TM drive" — strategy A: APFS role check
+
+Primary signal: `/usr/sbin/diskutil apfs list -plist` exposes a `Roles` array
+on every APFS volume entry. A TM destination has `Roles = ["Backup"]`. We
+parse the plist, build a `Set<String>` of BSD device identifiers (e.g.
+`disk7s2`) whose role array contains `"Backup"`, and look up the new mount's
+BSD name. Cache TTL is 30s; the cache is invalidated on every `DA` mount or
+unmount event so it's fresh exactly when classification runs.
+
+Notable: macOS does NOT expose APFS roles through DiskArbitration.
+`kDADiskDescriptionVolumeApfsRolesKey` doesn't exist in the public framework,
+and `DADiskCopyDescription`'s dict has no roles field (verified empirically on
+macOS 26 Tahoe — see commit message of the introducing change). The
+`diskutil apfs list -plist` shell-out is the cleanest path without private
+SPI, runs as the user, and needs no FDA.
+
+### Strategy B: filesystem-marker fallback
+
+Some volumes won't be in the APFS plist (non-APFS, race during early mount).
+For those, look for either marker at the volume root:
+
+- `.com.apple.TimeMachine.IOCheck/` — present on APFS-era TM destinations
+  even before the first backup completes.
+- `Backups.backupdb/` — HFS+ legacy TM destinations.
+
+`.MobileBackups` is deliberately NOT a marker — it's a SOURCE-side local
+snapshots indicator, not a destination indicator.
+
+### Fail-safe: classification unknown
+
+If strategy A errored out (shell-out failed or plist unparseable) AND
+strategy B found no markers, the classifier returns `.unknown`. The caller
+(`DiskAppearedObserver`) treats that as "do nothing" — TMEject is in scope
+for TM drives only, and we'd rather miss a foreign drive than risk ejecting
+the user's primary external SSD. The unknown branch logs at ERROR so silent
+classification failures surface.
+
+Same fail-safe applies if `tmutil destinationinfo -X` fails: we can't tell
+own-vs-foreign, so we skip ejection.
+
+### 10-second grace + Cancel
+
+On a confirmed foreign-TM detection, `ForeignDriveGracePeriod` schedules an
+eject 10s in the future and surfaces a `.warning`-kind toast with a Cancel
+button. Cancel paths: user click, drive yanked mid-grace, setting toggled
+off. There's no per-UUID memory of cancels — same drive re-mounting fires
+the grace again (the cable might come and go without intent).
+
+Multiple concurrent grace timers are supported, keyed by `volumeURL`. A
+duplicate `DADiskAppeared` callback for the same URL (DA emits one at
+registration time) does NOT reset the running clock — startGrace is a no-op
+when a pending entry already exists.
+
+When the grace expires, the eject reuses `Ejector.eject(volumeURL:)` —
+exactly the same DA unmount + 8-attempt retry schedule + lsof holder probe
+as the post-backup auto-eject path. There's no state-machine entry; foreign
+drives are independent of `AppState`.
+
+### Default
+
+`@AppStorage(ejectForeignTMDrives)` defaults TRUE — seeded at AppCoordinator
+init the first time. The Settings → Behavior row offers a toggle. Off →
+existing pending graces are cancelled with reason `.settingOff`.
+
 ## Observation: clocks
 
 `MonotonicClock` (`ProcessInfo.systemUptime`) is used for the stall timer and
