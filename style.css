@@ -211,7 +211,7 @@ html.paged { scroll-snap-type: y mandatory; scroll-padding-top: 0; }
 .twin .b2 { background: rgba(255,255,255,0.12); }
 
 /* ============================================================ RITUAL SECTION */
-.ritual-sec { background: var(--bg-raise); border-top: 0.5px solid var(--line); border-bottom: 0.5px solid var(--line); position: relative; overflow: hidden; }
+.ritual-sec { border-top: 0.5px solid var(--line); border-bottom: 0.5px solid var(--line); position: relative; overflow: hidden; }
 .ritual-sec .glow { position: absolute; right: -10%; top: 50%; transform: translateY(-50%); width: 600px; height: 600px; background: radial-gradient(50% 50% at 50% 50%, var(--ritual-soft) 0%, transparent 70%); opacity: 0.7; pointer-events: none; }
 .ritual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(40px, 6vw, 88px); align-items: center; position: relative; z-index: 1; width: 100%; }
 .ritual-copy h2 { font-size: clamp(28px, 3.6vw, 46px); font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; text-wrap: balance; }
@@ -267,7 +267,7 @@ html.paged { scroll-snap-type: y mandatory; scroll-padding-top: 0; }
 }
 
 /* ============================================================ STATES SECTION */
-.states-sec { background: var(--bg-raise); border-top: 0.5px solid var(--line); border-bottom: 0.5px solid var(--line); }
+.states-sec { border-top: 0.5px solid var(--line); border-bottom: 0.5px solid var(--line); }
 .states-grid { display:flex; flex-direction:column; gap: clamp(22px,3vh,34px); max-width: 560px; }
 .states-sec .states-head { text-align: left; margin: 0; max-width: none; }
 .states-sec .states-head h2 { font-size: clamp(26px, 3.2vw, 38px); font-weight: 600; letter-spacing: -0.03em; line-height: 1.02; }
