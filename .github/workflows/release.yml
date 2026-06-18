@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.1.0)'
+        required: true
+
+jobs:
+  # ── Build, sign, notarize, EdDSA-sign the macOS app ──────────────
+  macos:
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 ensures the build-version can derive from
+          # `git rev-list --count HEAD` if release.sh ever needs it.
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version $VERSION"
+
+      - name: Install tools
+        run: brew install xcodegen xcbeautify
+
+      # Import the Developer ID Application certificate into a fresh
+      # temporary keychain. Pattern from Apple's docs + the standard
+      # GH Actions code-signing recipe. Keychain is torn down when the
+      # runner job completes — secrets never persist on disk.
+      - name: Import Developer ID signing cert
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -e
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain-db
+          CERT_PATH=$RUNNER_TEMP/cert.p12
+
+          echo -n "$CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+
+          # Sanity check
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      # Store the App Store Connect API key as a notarytool keychain
+      # profile so xcrun notarytool can submit. Profile name AC_NOTARY
+      # matches what scripts/release.sh expects.
+      - name: Setup notarytool credentials
+        env:
+          AC_API_KEY_BASE64: ${{ secrets.AC_API_KEY_BASE64 }}
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+        run: |
+          set -e
+          mkdir -p ~/.appstoreconnect/private_keys
+          KEY_PATH=~/.appstoreconnect/private_keys/AuthKey_${AC_API_KEY_ID}.p8
+          echo -n "$AC_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+
+          xcrun notarytool store-credentials AC_NOTARY \
+            --key "$KEY_PATH" \
+            --key-id "$AC_API_KEY_ID" \
+            --issuer "$AC_API_ISSUER_ID"
+
+      # Resolve SPM packages so generate_appcast (inside Sparkle SPM
+      # checkout) is on disk before release.sh tries to use it.
+      - name: Resolve SPM packages
+        run: |
+          xcodegen generate
+          xcodebuild -project TMEject.xcodeproj -scheme TMEject \
+            -resolvePackageDependencies > /dev/null
+
+      # Stage the Sparkle EdDSA private key as a file. release.sh's
+      # generate_appcast call uses --ed-key-file to read from this path
+      # instead of the keychain — bypasses the ACL prompt that hangs
+      # headless runners.
+      - name: Decode Sparkle EdDSA private key to file
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -e
+          echo -n "$SPARKLE_PRIVATE_KEY" | base64 --decode > "$RUNNER_TEMP/sparkle.key"
+          chmod 600 "$RUNNER_TEMP/sparkle.key"
+
+      # Build + sign + notarize + staple + zip + EdDSA-sign appcast.
+      - name: Build signed + notarized release
+        env:
+          SPARKLE_PRIVATE_KEY_FILE: ${{ runner.temp }}/sparkle.key
+          TMEJECT_NOTARY_PROFILE: AC_NOTARY
+        run: bash scripts/release.sh ${{ steps.version.outputs.value }}
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TMEject-release-${{ steps.version.outputs.value }}
+          path: |
+            releases/TMEject-${{ steps.version.outputs.value }}.zip
+            releases/appcast.xml
+
+  # ── GitHub Release ───────────────────────────────────────────────
+  release:
+    needs: macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: TMEject-release-${{ needs.macos.outputs.version }}
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          # Pre-release tags (v*-beta.*, v*-rc.*) get marked as Pre-release
+          # so they don't appear as "Latest release" on the repo home page.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            artifacts/TMEject-${{ needs.macos.outputs.version }}.zip
+
+  # ── Publish to gh-pages (the live download + appcast) ────────────
+  publish:
+    needs: [macos, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: TMEject-release-${{ needs.macos.outputs.version }}
+          path: artifacts
+
+      - name: Stage download + appcast
+        run: |
+          set -e
+          mkdir -p downloads
+          cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.zip" "downloads/TMEject-${{ needs.macos.outputs.version }}.zip"
+          # Versionless alias for the website hero CTA
+          cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.zip" "downloads/TMEject-latest.zip"
+          cp "artifacts/appcast.xml" "appcast.xml"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add downloads appcast.xml
+          git commit -m "release: publish ${{ needs.macos.outputs.version }}"
+          git push origin gh-pages

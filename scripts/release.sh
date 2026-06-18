@@ -160,7 +160,15 @@ echo "    sha256 ${SHA}"
 
 # ---- appcast ----
 echo "==> generate_appcast ${RELEASES_DIR}"
-"${GENERATE_APPCAST}" "${RELEASES_DIR}"
+# When SPARKLE_PRIVATE_KEY_FILE is set (e.g. in CI), generate_appcast reads
+# the EdDSA private key from the file instead of the login keychain. The
+# keychain path triggers an "Allow access?" ACL dialog that hangs headless
+# runners forever.
+if [[ -n "${SPARKLE_PRIVATE_KEY_FILE:-}" ]]; then
+    "${GENERATE_APPCAST}" --ed-key-file "${SPARKLE_PRIVATE_KEY_FILE}" "${RELEASES_DIR}"
+else
+    "${GENERATE_APPCAST}" "${RELEASES_DIR}"
+fi
 if [[ ! -f "${APPCAST_PATH}" ]]; then
     echo "ERROR: appcast.xml not written at ${APPCAST_PATH}" >&2
     exit 72
