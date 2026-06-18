@@ -136,12 +136,12 @@ final class AppCoordinator: ObservableObject {
     private var foreignDriveGrace: ForeignDriveGracePeriod?
 
     // Toast suppression default — Step 10's Advanced tab UI flips this.
-    private static let toastsEnabledKey = "co.dls.tmeject.toastsEnabled"
+    private static let toastsEnabledKey = "com.tmeject.app.toastsEnabled"
 
     // M3 (Step 12.7+13 renamed): UserDefaults key for the snapshot path captured at
     // backupBegan. Was preConfirmLatestBackupPath when the capture point was confirming-entry;
     // the Tahoe snapshot-delta race fix moves capture to backupBegan and renames accordingly.
-    private static let preBackupPathKey = "co.dls.tmeject.preBackupLatestBackupPath"
+    private static let preBackupPathKey = "com.tmeject.app.preBackupLatestBackupPath"
 
     init(
         tmutil: TMUtilClient = LiveTMUtilClient(),
@@ -659,11 +659,11 @@ final class AppCoordinator: ObservableObject {
     // MARK: - M3 relaunch restore
 
     /// Step 13 fixup — migrate the pre-rename key. Existing installs persisted in-flight
-    /// state under `co.dls.tmeject.preConfirmLatestBackupPath`; the Tahoe baseline fix
+    /// state under `com.tmeject.app.preConfirmLatestBackupPath`; the Tahoe baseline fix
     /// moved capture to backupBegan and renamed to `preBackupLatestBackupPath`. Copy any
     /// stale value forward once, then delete the legacy key. Idempotent — subsequent runs
     /// see the legacy key already gone.
-    private static let legacyPreConfirmPathKey = "co.dls.tmeject.preConfirmLatestBackupPath"
+    private static let legacyPreConfirmPathKey = "com.tmeject.app.preConfirmLatestBackupPath"
 
     private func migrateLegacyPersistedBaseline() {
         guard let legacy = defaults.string(forKey: Self.legacyPreConfirmPathKey) else { return }

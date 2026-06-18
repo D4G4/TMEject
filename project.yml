@@ -1,6 +1,6 @@
 name: TMEject
 options:
-  bundleIdPrefix: co.dls.tmeject
+  bundleIdPrefix: com.tmeject.app
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -31,7 +31,7 @@ targets:
       - package: Sparkle
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: co.dls.tmeject
+        PRODUCT_BUNDLE_IDENTIFIER: com.tmeject.app
         PRODUCT_NAME: TMEject
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -56,7 +56,7 @@ targets:
       - target: TMEject
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: co.dls.tmeject.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.tmeject.app.tests
         GENERATE_INFOPLIST_FILE: YES
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TMEject.app/Contents/MacOS/TMEject"
@@ -71,7 +71,7 @@ targets:
       - target: TMEject
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: co.dls.tmeject.snapshottests
+        PRODUCT_BUNDLE_IDENTIFIER: com.tmeject.app.snapshottests
         GENERATE_INFOPLIST_FILE: YES
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TMEject.app/Contents/MacOS/TMEject"

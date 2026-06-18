@@ -2,9 +2,9 @@ import Foundation
 import UserNotifications
 
 enum NotificationCategory: String, Sendable {
-    case backupFailure        = "co.dls.tmeject.backupFailure"
-    case ejectFailurePersistent = "co.dls.tmeject.ejectFailurePersistent"
-    case generic              = "co.dls.tmeject.generic"
+    case backupFailure        = "com.tmeject.app.backupFailure"
+    case ejectFailurePersistent = "com.tmeject.app.ejectFailurePersistent"
+    case generic              = "com.tmeject.app.generic"
 }
 
 enum NotificationAuthState: String, Sendable, Equatable {
@@ -32,8 +32,11 @@ actor LiveSystemNotifier: SystemNotifier {
     }
 
     func currentAuthState() async -> NotificationAuthState {
-        let settings = await center.notificationSettings()
-        return Self.map(settings.authorizationStatus)
+        // UNNotificationSettings isn't Sendable; UNAuthorizationStatus (an
+        // Int-backed enum) is. Project the status out of the settings on the
+        // delegate's actor so the non-Sendable intermediate never crosses.
+        let status = await center.notificationSettings().authorizationStatus
+        return Self.map(status)
     }
 
     func requestAuthorizationIfNeeded() async -> Bool {

@@ -120,7 +120,7 @@ struct TMEjectLogger {
     private let category: String
 
     init(_ category: String) {
-        self.logger = Logger(subsystem: "co.dls.tmeject", category: category)
+        self.logger = Logger(subsystem: "com.tmeject.app", category: category)
         self.category = category
     }
 

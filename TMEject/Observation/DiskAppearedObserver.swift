@@ -198,7 +198,7 @@ actor DiskAppearedObserver {
 /// closures. The DA session must outlive the observer; we keep a strong reference.
 final class LiveDiskAppearedBridge: DiskAppearedBridge, @unchecked Sendable {
 
-    private let queue = DispatchQueue(label: "co.dls.tmeject.diskAppeared",
+    private let queue = DispatchQueue(label: "com.tmeject.app.diskAppeared",
                                       qos: .userInitiated)
     private let session: DASession
     private let sinkLock = NSLock()

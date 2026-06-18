@@ -61,7 +61,7 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
                               clock: FakeClock(),
                               schedule: EjectorRetrySchedule(backoffsSeconds: [0]))
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        defaults.set(toasts, forKey: "co.dls.tmeject.toastsEnabled")
+        defaults.set(toasts, forKey: "com.tmeject.app.toastsEnabled")
         let tmutil = FakeTMUtilClient()
         if destinationInfoEnqueue {
             await tmutil.enqueueDestinationInfo(.success([
@@ -83,7 +83,7 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
 
     func testToastsEnabledByDefault_FreshDefaults() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        XCTAssertNil(defaults.object(forKey: "co.dls.tmeject.toastsEnabled"))
+        XCTAssertNil(defaults.object(forKey: "com.tmeject.app.toastsEnabled"))
         let coord = AppCoordinator(
             tmutil: FakeTMUtilClient(),
             ejector: Ejector(unmount: FakeUnmountBridge(), lsof: FakeLsofProbe(),
@@ -97,7 +97,7 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
             toastPresenter: nil
         )
         XCTAssertTrue(coord.toastsEnabled)
-        XCTAssertNotNil(defaults.object(forKey: "co.dls.tmeject.toastsEnabled"))
+        XCTAssertNotNil(defaults.object(forKey: "com.tmeject.app.toastsEnabled"))
     }
 
     func testShowToastDispatchesToPresenterWhenEnabled() async {
