@@ -24,7 +24,11 @@ protocol SystemNotifier: Sendable {
 }
 
 actor LiveSystemNotifier: SystemNotifier {
-    private let center: UNUserNotificationCenter
+    // UNUserNotificationCenter is documented thread-safe but Apple hasn't
+    // marked it Sendable in the SDK. nonisolated(unsafe) tells Swift 6's
+    // strict checker we accept responsibility for using it correctly across
+    // the actor's await boundaries.
+    nonisolated(unsafe) private let center: UNUserNotificationCenter
     private var hasRequested = false
 
     init(center: UNUserNotificationCenter = .current()) {
