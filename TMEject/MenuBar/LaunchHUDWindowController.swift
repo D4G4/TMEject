@@ -68,8 +68,13 @@ final class LaunchHUDWindowController {
             ctx.duration = 0.3
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
-            panel.orderOut(nil)
-            self?.window = nil
+            // NSAnimationContext completion handlers actually run on the
+            // main thread, but Swift 6 sees them as @Sendable and doesn't
+            // know that. assumeIsolated lets us touch MainActor state safely.
+            MainActor.assumeIsolated {
+                panel.orderOut(nil)
+                self?.window = nil
+            }
         })
     }
 

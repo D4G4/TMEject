@@ -32,11 +32,15 @@ actor LiveSystemNotifier: SystemNotifier {
     }
 
     func currentAuthState() async -> NotificationAuthState {
-        // UNNotificationSettings isn't Sendable; UNAuthorizationStatus (an
-        // Int-backed enum) is. Project the status out of the settings on the
-        // delegate's actor so the non-Sendable intermediate never crosses.
-        let status = await center.notificationSettings().authorizationStatus
-        return Self.map(status)
+        // UNNotificationSettings isn't Sendable, so the async API can't return
+        // it across the isolation boundary cleanly. The completion-handler API
+        // lets us consume the settings on UN's delivery queue and only hand
+        // the Sendable UNAuthorizationStatus back via the continuation.
+        await withCheckedContinuation { (cont: CheckedContinuation<NotificationAuthState, Never>) in
+            center.getNotificationSettings { settings in
+                cont.resume(returning: Self.map(settings.authorizationStatus))
+            }
+        }
     }
 
     func requestAuthorizationIfNeeded() async -> Bool {

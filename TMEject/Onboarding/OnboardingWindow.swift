@@ -59,8 +59,10 @@ final class OnboardingWindowController {
             ctx.duration = 0.3
             win.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
-            win.orderOut(nil)
-            self?.window = nil
+            MainActor.assumeIsolated {
+                win.orderOut(nil)
+                self?.window = nil
+            }
         })
     }
 }

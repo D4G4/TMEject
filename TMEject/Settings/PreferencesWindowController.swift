@@ -40,10 +40,12 @@ final class PreferencesWindowController {
             object: win,
             queue: .main
         ) { [weak self] _ in
-            UIActionLogger.windowClosed("Preferences")
-            self?.window = nil
-            // Drop back to accessory so we lose the Dock icon when no window is open.
-            NSApp.setActivationPolicy(.accessory)
+            MainActor.assumeIsolated {
+                UIActionLogger.windowClosed("Preferences")
+                self?.window = nil
+                // Drop back to accessory so we lose the Dock icon when no window is open.
+                NSApp.setActivationPolicy(.accessory)
+            }
         }
         self.window = win
     }

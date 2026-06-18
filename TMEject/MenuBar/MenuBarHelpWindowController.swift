@@ -49,9 +49,13 @@ final class MenuBarHelpWindowController {
             object: win,
             queue: .main
         ) { [weak self] _ in
-            UIActionLogger.windowClosed("MenuBarHelp")
-            self?.window = nil
-            NSApp.setActivationPolicy(.accessory)
+            // queue: .main guarantees this runs on the main thread, but Swift 6
+            // sees the closure as @Sendable. assumeIsolated bridges the gap.
+            MainActor.assumeIsolated {
+                UIActionLogger.windowClosed("MenuBarHelp")
+                self?.window = nil
+                NSApp.setActivationPolicy(.accessory)
+            }
         }
 
         self.window = win
