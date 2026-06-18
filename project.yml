@@ -43,9 +43,8 @@ targets:
         INFOPLIST_KEY_SUEnableAutomaticChecks: YES
         INFOPLIST_KEY_SUScheduledCheckInterval: 86400
         # PRIVATE EdDSA key lives in the user's keychain (see docs/release-setup.md).
-        # The PUBLIC half goes here. <TODO> until the user runs `generate_keys` once;
-        # release.sh refuses to ship if this is still <TODO>.
-        INFOPLIST_KEY_SUPublicEDKey: "<TODO>"
+        # The PUBLIC half goes here. Generated via `generate_keys` from Sparkle's CLI.
+        INFOPLIST_KEY_SUPublicEDKey: "agdJmL4C1ciE/qX6oEcxkZgc8fu264R45/vCfg09BKY="
         CODE_SIGN_ENTITLEMENTS: TMEject/TMEject.entitlements
         ENABLE_APP_SANDBOX: NO
   TMEjectTests:
