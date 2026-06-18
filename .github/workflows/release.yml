@@ -11,16 +11,19 @@ on:
         required: true
 
 jobs:
-  # ── Build, sign, notarize, EdDSA-sign the macOS app ──────────────
+  # ── Build, sign, notarize, EdDSA-sign the macOS DMG ──────────────
   macos:
     runs-on: macos-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
+      # fetch-depth: 0 is REQUIRED — build-release.sh derives the
+      # CFBundleVersion from `git rev-list --count HEAD`, which returns
+      # 1 on a shallow (default) checkout. CFBundleVersion=1 = Sparkle
+      # tells every installed user "you're up to date" regardless of
+      # marketing version.
       - uses: actions/checkout@v4
         with:
-          # fetch-depth: 0 ensures the build-version can derive from
-          # `git rev-list --count HEAD` if release.sh ever needs it.
           fetch-depth: 0
 
       - name: Determine version
@@ -35,12 +38,11 @@ jobs:
           echo "Releasing version $VERSION"
 
       - name: Install tools
-        run: brew install xcodegen xcbeautify create-dmg
+        run: brew install xcodegen create-dmg
 
       # Import the Developer ID Application certificate into a fresh
-      # temporary keychain. Pattern from Apple's docs + the standard
-      # GH Actions code-signing recipe. Keychain is torn down when the
-      # runner job completes — secrets never persist on disk.
+      # temporary keychain. Keychain is torn down when the runner job
+      # completes — secrets never persist on disk.
       - name: Import Developer ID signing cert
         env:
           CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
@@ -67,8 +69,8 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       # Store the App Store Connect API key as a notarytool keychain
-      # profile so xcrun notarytool can submit. Profile name AC_NOTARY
-      # matches what scripts/release.sh expects.
+      # profile so xcrun notarytool can submit the DMG. Profile name
+      # AC_NOTARY matches what scripts/release.sh expects.
       - name: Setup notarytool credentials
         env:
           AC_API_KEY_BASE64: ${{ secrets.AC_API_KEY_BASE64 }}
@@ -86,16 +88,16 @@ jobs:
             --key-id "$AC_API_KEY_ID" \
             --issuer "$AC_API_ISSUER_ID"
 
-      # Resolve SPM packages so generate_appcast (inside Sparkle SPM
-      # checkout) is on disk before release.sh tries to use it.
-      - name: Resolve SPM packages
+      # Resolve SPM packages so sign_update (inside Sparkle SPM checkout)
+      # is on disk before release.sh tries to use it.
+      - name: Resolve SPM packages (needed to find sign_update)
         run: |
           xcodegen generate
           xcodebuild -project TMEject.xcodeproj -scheme TMEject \
             -resolvePackageDependencies > /dev/null
 
       # Stage the Sparkle EdDSA private key as a file. release.sh's
-      # generate_appcast call uses --ed-key-file to read from this path
+      # sign_update call uses --ed-key-file to read from this path
       # instead of the keychain — bypasses the ACL prompt that hangs
       # headless runners.
       - name: Decode Sparkle EdDSA private key to file
@@ -106,21 +108,23 @@ jobs:
           echo -n "$SPARKLE_PRIVATE_KEY" | base64 --decode > "$RUNNER_TEMP/sparkle.key"
           chmod 600 "$RUNNER_TEMP/sparkle.key"
 
-      # Build + sign + notarize + staple + zip + EdDSA-sign appcast.
-      - name: Build signed + notarized release
+      # Build + sign + notarize + staple + EdDSA-sign DMG.
+      - name: Build signed + notarized + EdDSA-signed DMG
         env:
           SPARKLE_PRIVATE_KEY_FILE: ${{ runner.temp }}/sparkle.key
-          TMEJECT_NOTARY_PROFILE: AC_NOTARY
-        run: bash scripts/release.sh ${{ steps.version.outputs.value }}
+        run: bash scripts/release.sh
 
-      - name: Upload release artifacts
+      - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TMEject-release-${{ steps.version.outputs.value }}
-          path: |
-            releases/TMEject-${{ steps.version.outputs.value }}.zip
-            releases/TMEject-${{ steps.version.outputs.value }}.dmg
-            releases/appcast.xml
+          name: TMEject-macOS
+          path: build/TMEject.dmg
+
+      - name: Upload appcast item artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TMEject-appcast-item
+          path: build/appcast-item.xml
 
   # ── GitHub Release ───────────────────────────────────────────────
   release:
@@ -129,10 +133,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download artifacts
+      - name: Download DMG
         uses: actions/download-artifact@v4
         with:
-          name: TMEject-release-${{ needs.macos.outputs.version }}
+          name: TMEject-macOS
           path: artifacts
 
       - name: Create GitHub Release
@@ -142,42 +146,61 @@ jobs:
           # Pre-release tags (v*-beta.*, v*-rc.*) get marked as Pre-release
           # so they don't appear as "Latest release" on the repo home page.
           prerelease: ${{ contains(github.ref_name, '-') }}
-          files: |
-            artifacts/TMEject-${{ needs.macos.outputs.version }}.dmg
-            artifacts/TMEject-${{ needs.macos.outputs.version }}.zip
+          files: artifacts/TMEject.dmg
 
-  # ── Publish to gh-pages (the live download + appcast) ────────────
-  publish:
-    needs: [macos, release]
+  # ── Publish Sparkle appcast + redeploy site ──────────────────────
+  # Must run after `release` so the DMG enclosure URL is live by the
+  # time the appcast is published. Otherwise the first user to fetch
+  # the new appcast would hit a 404 on download.
+  appcast:
+    needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: gh-pages
+          ref: main
 
-      - name: Download artifacts
+      - name: Download appcast item
         uses: actions/download-artifact@v4
         with:
-          name: TMEject-release-${{ needs.macos.outputs.version }}
+          name: TMEject-appcast-item
           path: artifacts
 
-      - name: Stage downloads + appcast
+      # Splice the new <item> into site/appcast.xml right after the
+      # <language>en</language> tag (top of <channel>). awk handles the
+      # multi-line insertion without shelling out to sed.
+      - name: Splice into site/appcast.xml
         run: |
           set -e
-          mkdir -p downloads
-          cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.dmg" "downloads/TMEject-${{ needs.macos.outputs.version }}.dmg"
-          cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.zip" "downloads/TMEject-${{ needs.macos.outputs.version }}.zip"
-          # Versionless aliases for the website hero CTA and Sparkle.
-          cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.dmg" "downloads/TMEject-latest.dmg"
-          cp "artifacts/TMEject-${{ needs.macos.outputs.version }}.zip" "downloads/TMEject-latest.zip"
-          cp "artifacts/appcast.xml" "appcast.xml"
+          awk '
+            /<language>en<\/language>/ {
+              print
+              while ((getline line < "artifacts/appcast-item.xml") > 0)
+                print line
+              close("artifacts/appcast-item.xml")
+              next
+            }
+            { print }
+          ' site/appcast.xml > site/appcast.xml.new
+          mv site/appcast.xml.new site/appcast.xml
 
-      - name: Commit and push
+      - name: Commit and push appcast
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add downloads appcast.xml
-          git commit -m "release: publish ${{ needs.macos.outputs.version }}"
-          git push origin gh-pages
+          git add site/appcast.xml
+          git commit -m "chore(appcast): publish ${GITHUB_REF_NAME}"
+          git push origin HEAD:main
+
+      # Subtree-split site/ into gh-pages branch and force-push so the
+      # updated appcast goes live for installed users on their next
+      # scheduled Sparkle check.
+      - name: Deploy to gh-pages
+        run: |
+          set -e
+          git fetch origin
+          git branch -D gh-pages 2>/dev/null || true
+          git subtree split --prefix site HEAD -b gh-pages
+          git push origin gh-pages --force
