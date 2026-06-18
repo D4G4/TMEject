@@ -50,10 +50,13 @@ if [ -z "$RAW_BUILD_NUMBER" ]; then
 fi
 
 APPCAST_URL="${APPCAST_URL:-https://d4g4.github.io/TMEject/appcast.xml}"
+# `|| true` so the bootstrap case (first release ever — no items in the
+# appcast yet) doesn't trip pipefail. grep returns 1 on no-match and that
+# cascades through with set -e otherwise.
 APPCAST_MAX=$(curl -fsSL --max-time 10 "$APPCAST_URL" 2>/dev/null \
     | grep -oE '<sparkle:version>[0-9]+</sparkle:version>' \
     | grep -oE '[0-9]+' \
-    | sort -n | tail -1)
+    | sort -n | tail -1 || true)
 
 if [ -n "$APPCAST_MAX" ] && [ "$APPCAST_MAX" -ge "$RAW_BUILD_NUMBER" ]; then
     BUILD_NUMBER=$((APPCAST_MAX + 1))
