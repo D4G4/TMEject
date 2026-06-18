@@ -280,6 +280,28 @@ trap is now mitigated only by the cooldown (default 30 min). Users running hourl
 should raise the cooldown to 90+ min in Settings to avoid the next backup failing
 because the drive ejected.
 
+### First-install onboarding flow
+
+Pre-v0.2 the boot path silently flipped `hasCompletedOnboarding=true` on first
+launch and showed only the Launch HUD — a per-launch *locator* that points at
+the menu bar icon. The HUD is not onboarding: a fresh install got zero intro,
+no permission asks, and crucially **never requested Full Disk Access**. Because
+auto-eject defaults ON (see "Defaults rationale" above), the missing FDA grant
+left auto-eject silently broken — the snapshot-path delta success rule depends
+on `tmutil latestbackup`, which needs FDA.
+
+The current path: on first install (or after Settings → Troubleshooting →
+Reset onboarding sets `forceOnboardingModal=true`), `AppDelegate` shows
+`OnboardingFlowWindowController` *before* the Launch HUD. Three steps in a
+single 480×540 window: (1) intro + bullet points, (2) Full Disk Access — opens
+System Settings, re-probes via `FullDiskAccessProbing` when the user taps
+"I've granted it", surfaces an inline error if still denied, (3) notifications
+— calls `SystemNotifier.requestAuthorizationIfNeeded()`, advances regardless of
+the user's choice. Each step has a tertiary "Skip" link. Completion sets
+`hasCompletedOnboarding=true`, dismisses the window, then the HUD shows. The
+HUD logic is unchanged — it remains a per-launch locator on top of (not in
+place of) the onboarding flow.
+
 ### Apple's Sandbox would block too much; we ship unsandboxed
 
 DiskArbitration `DADiskUnmount` from inside an App Sandbox container requires

@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     lazy var preferencesController: PreferencesWindowController = {
         PreferencesWindowController(coordinator: coordinator)
     }()
-    private let onboarding = OnboardingWindowController()
+    private let onboardingFlow = OnboardingFlowWindowController()
     private let launchHUD = LaunchHUDWindowController()
     private let menuBarHelp = MenuBarHelpWindowController()
     private var logStreamObserver: LogStreamObserver?
@@ -81,28 +81,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         NSApp.setActivationPolicy(.accessory)
     }
 
-    /// Always shows the Launch HUD on launch. The modal explainer is only shown when the
-    /// user explicitly resets onboarding from Settings → Troubleshooting (which sets
-    /// `forceOnboardingModal=true`).
+    /// First-install flow + Launch HUD ordering:
+    ///   1. If `hasCompletedOnboarding == false` OR Reset Onboarding was tapped
+    ///      (`forceOnboardingModal == true`), show the three-step `OnboardingFlowView`
+    ///      window FIRST. The HUD is suppressed while it's up.
+    ///   2. When the flow finishes (or the user closes the window), show the Launch HUD
+    ///      — the existing locator that runs every launch to point at the menu bar icon.
+    ///
+    /// Why the flow is gated and the HUD isn't: the flow asks for permissions (FDA +
+    /// notifications) and explains the app, so it must only run once. The HUD is purely
+    /// "here is the menu bar icon" and has to run every launch because menu bar managers
+    /// (Bartender, iBar) and fresh login sessions reshuffle layout.
     private func presentLaunchSurfacesIfNeeded() {
         let defaults = UserDefaults.standard
         let didOnboarding = defaults.bool(forKey: SettingsKey.hasCompletedOnboarding)
         let forceModal   = defaults.bool(forKey: SettingsKey.forceOnboardingModal)
 
         if forceModal {
-            UIActionLogger.onboardingStep("force modal requested — opening modal")
             defaults.set(false, forKey: SettingsKey.forceOnboardingModal)
-            onboarding.show(coordinator: coordinator) { [weak self] in
-                defaults.set(true, forKey: SettingsKey.hasCompletedOnboarding)
+        }
+
+        if !didOnboarding || forceModal {
+            UIActionLogger.onboardingStep(
+                "showing three-step flow (didOnboarding=\(didOnboarding), forceModal=\(forceModal))"
+            )
+            onboardingFlow.show(coordinator: coordinator) { [weak self] in
                 self?.presentLaunchHUD()
             }
             return
-        }
-
-        if !didOnboarding {
-            // Onboarding A — set the flag immediately, then show the HUD.
-            UIActionLogger.onboardingStep("first launch — HUD only (Onboarding A)")
-            defaults.set(true, forKey: SettingsKey.hasCompletedOnboarding)
         }
 
         presentLaunchHUD()
