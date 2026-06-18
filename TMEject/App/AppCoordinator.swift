@@ -92,10 +92,12 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    /// Extends ToastLevel with the design-pass kinds (busy, neutral) that don't map onto a
-    /// state-machine ToastLevel.
+    /// Extends ToastLevel with the design-pass kinds (busy, neutral, warning) that
+    /// don't map onto a state-machine ToastLevel. `.warning` (orange) is reserved
+    /// for the foreign-TM-drive grace toast — the state-machine `.warning` ToastLevel
+    /// still folds to `.err` (red) for back-compat with eject/backup failure copy.
     enum ToastKind: Sendable, Equatable {
-        case ok, err, busy, neutral
+        case ok, err, warning, busy, neutral
 
         static func fromLevel(_ level: AppCommand.ToastLevel) -> ToastKind {
             switch level {
@@ -126,6 +128,12 @@ final class AppCoordinator: ObservableObject {
     private static let fdaNotificationRateLimitSeconds: TimeInterval = 60 * 60 * 24    // once per 24h
     private var observer: PollingObserver?
     private var lastResolvedDestination: ResolvedDestination?
+    /// Foreign-TM-drive auto-eject pipeline. Created lazily in `start()` because it
+    /// owns a live `DASession` we don't want spun up in unit tests that just construct
+    /// the coordinator. nil until `start()` runs OR a test injects fakes via
+    /// `wireForeignDriveDetectionForTests`.
+    private var diskAppearedObserver: DiskAppearedObserver?
+    private var foreignDriveGrace: ForeignDriveGracePeriod?
 
     // Toast suppression default — Step 10's Advanced tab UI flips this.
     private static let toastsEnabledKey = "co.dls.tmeject.toastsEnabled"
@@ -167,6 +175,11 @@ final class AppCoordinator: ObservableObject {
         // warning lives in the Settings cooldown copy + docs/architecture.md.
         if defaults.object(forKey: SettingsKey.autoEjectEnabled) == nil {
             defaults.set(true, forKey: SettingsKey.autoEjectEnabled)
+        }
+        // Foreign-TM-drive auto-eject defaults ON — see
+        // docs/architecture.md "Foreign TM drive detection" for rationale.
+        if defaults.object(forKey: SettingsKey.ejectForeignTMDrives) == nil {
+            defaults.set(true, forKey: SettingsKey.ejectForeignTMDrives)
         }
         self.loginItemStatus = loginItem.currentStatus()
         defaults.set(self.loginItemStatus == .enabled, forKey: SettingsKey.launchAtLogin)
@@ -343,7 +356,64 @@ final class AppCoordinator: ObservableObject {
         )
         self.observer = observer
         Task { await observer.start() }
+
+        startForeignDriveDetection()
     }
+
+    /// Stand up the foreign-TM-drive pipeline. Idempotent — safe to call twice (no-ops
+    /// after the first). Split from `start()` so tests can inject a fake DA bridge via
+    /// `wireForeignDriveDetectionForTests(...)` before `start()` runs.
+    private func startForeignDriveDetection() {
+        guard diskAppearedObserver == nil else { return }
+
+        let grace = ForeignDriveGracePeriod(
+            clock: clock,
+            onExpire: { [weak self] candidate in
+                await self?.ejectForeignDrive(candidate: candidate)
+            }
+        )
+        self.foreignDriveGrace = grace
+
+        let observer = DiskAppearedObserver(
+            tmutil: tmutil,
+            onCandidate: { [weak self] candidate in
+                await self?.handleForeignTMDriveCandidate(candidate)
+            },
+            onDisappeared: { [weak self] volumeURL in
+                await self?.handleForeignTMDriveDisappeared(volumeURL: volumeURL)
+            }
+        )
+        self.diskAppearedObserver = observer
+        Task { await observer.start() }
+    }
+
+    #if DEBUG
+    /// Test seam — replaces the live DA bridge with a fake one BEFORE start() so
+    /// foreign-drive detection runs against synthesised mount events. Tests must
+    /// call this prior to `start()`; otherwise `startForeignDriveDetection` spins
+    /// up the live bridge.
+    func wireForeignDriveDetectionForTests(
+        bridge: DiskAppearedBridge,
+        classifier: TMDriveClassifier,
+        grace: ForeignDriveGracePeriod
+    ) {
+        self.foreignDriveGrace = grace
+        self.diskAppearedObserver = DiskAppearedObserver(
+            bridge: bridge,
+            classifier: classifier,
+            tmutil: tmutil,
+            onCandidate: { [weak self] candidate in
+                await self?.handleForeignTMDriveCandidate(candidate)
+            },
+            onDisappeared: { [weak self] volumeURL in
+                await self?.handleForeignTMDriveDisappeared(volumeURL: volumeURL)
+            }
+        )
+        if let observer = self.diskAppearedObserver {
+            Task { await observer.start() }
+        }
+    }
+    #endif
 
     /// Drive-presence is what gates the popover's primary CTA, so we refresh on the same
     /// hooks as login-item + FDA: popover .onAppear, prefs .onAppear, app didBecomeActive.
@@ -388,6 +458,138 @@ final class AppCoordinator: ObservableObject {
         )
         await observer?.stop()
         observer = nil
+        await diskAppearedObserver?.stop()
+        diskAppearedObserver = nil
+        await foreignDriveGrace?.cancelAll(reason: .settingOff)
+        foreignDriveGrace = nil
+    }
+
+    // MARK: - Foreign TM drive auto-eject
+
+    /// Called by `DiskAppearedObserver` whenever a foreign Time Machine drive mounts
+    /// (TM-role volume not in this Mac's `tmutil destinationinfo` set). Skipped when
+    /// the setting is OFF — we surface the detection at INFO level so it's still
+    /// visible in logs.
+    func handleForeignTMDriveCandidate(_ candidate: ForeignTMDriveCandidate) async {
+        guard defaults.bool(forKey: SettingsKey.ejectForeignTMDrives) else {
+            TMEjectLog.eject.info(
+                "Foreign TM drive detected (\(candidate.volumeName)) but setting is OFF — ignoring"
+            )
+            return
+        }
+        guard let grace = foreignDriveGrace else { return }
+        await grace.startGrace(for: candidate)
+        let toast = ToastMessage(
+            level: .warning,
+            text: "Foreign Time Machine drive",
+            subtitle: "\(candidate.volumeName) — Ejecting in \(Int(ForeignDriveGracePeriod.graceDurationSeconds))s",
+            kind: .warning,
+            actionLabel: "Cancel"
+        )
+        lastToast = toast
+        if toastsEnabled {
+            toastPresenter?.present(
+                level: .warning,
+                message: toast.text,
+                subtitle: toast.subtitle,
+                kind: .warning,
+                actionLabel: "Cancel",
+                onAction: { [weak self] in
+                    Task { await self?.cancelForeignDriveGrace(volumeURL: candidate.volumeURL, reason: .user) }
+                }
+            )
+        }
+    }
+
+    /// Called by the DA bridge when a volume unmounts. Cancels any in-flight grace
+    /// — there's no point ejecting a drive that's already gone.
+    func handleForeignTMDriveDisappeared(volumeURL: URL) async {
+        await foreignDriveGrace?.cancel(volumeURL: volumeURL, reason: .unmount)
+    }
+
+    /// Wired into the toast's Cancel button + a future popover row's Cancel button.
+    func cancelForeignDriveGrace(volumeURL: URL, reason: ForeignDriveGracePeriod.CancelReason) async {
+        await foreignDriveGrace?.cancel(volumeURL: volumeURL, reason: reason)
+        UIActionLogger.logAction("Foreign eject cancelled",
+                                 context: "url=\(volumeURL.path) reason=\(reason.rawValue)")
+        let toast = ToastMessage(
+            level: .info,
+            text: "Foreign drive eject cancelled",
+            subtitle: volumeURL.lastPathComponent,
+            kind: .neutral
+        )
+        lastToast = toast
+        if toastsEnabled {
+            toastPresenter?.present(level: .info,
+                                     message: toast.text,
+                                     subtitle: toast.subtitle,
+                                     kind: .neutral,
+                                     actionLabel: nil)
+        }
+    }
+
+    /// Called when the user toggles the setting OFF — drops any in-flight grace
+    /// timers so the toggle has immediate effect.
+    func respondToEjectForeignTMDrivesChange(_ enabled: Bool) {
+        UIActionLogger.settingChanged("ejectForeignTMDrives", value: "\(enabled)")
+        if !enabled {
+            Task { await foreignDriveGrace?.cancelAll(reason: .settingOff) }
+        }
+    }
+
+    /// Ejects a foreign TM drive after the grace expires. Reuses the same
+    /// `Ejector` retry pipeline as the auto-eject path. No locking, no cooldown —
+    /// foreign drives are independent of this Mac's backup schedule.
+    private func ejectForeignDrive(candidate: ForeignTMDriveCandidate) async {
+        TMEjectLog.eject.info(
+            "Ejecting foreign TM drive: \(candidate.volumeName) at \(candidate.volumeURL.path)"
+        )
+        // EjectSource.foreign threads through the existing AppEvent path so
+        // StateMachine + telemetry stay consistent. We DON'T touch the state machine
+        // because foreign-drive ejects are independent of the backup state machine —
+        // they happen in any AppState, and they don't change AppState. We just call
+        // the Ejector directly and surface the result via toast.
+        let report = await ejector.eject(volumeURL: candidate.volumeURL,
+                                          onAttempt: { [weak self] attempt in
+            await self?.handleEjectProgress(attempt)
+        })
+        if report.succeeded {
+            ejectSuccessesThisSession += 1
+            TMEjectLog.eject.info("Foreign TM drive ejected: \(candidate.volumeName)")
+            let toast = ToastMessage(
+                level: .success,
+                text: "\(candidate.volumeName) ejected",
+                subtitle: "foreign Time Machine drive",
+                kind: .ok
+            )
+            lastToast = toast
+            if toastsEnabled {
+                toastPresenter?.present(level: .success,
+                                         message: toast.text,
+                                         subtitle: toast.subtitle,
+                                         kind: .ok,
+                                         actionLabel: nil)
+            }
+        } else {
+            ejectFailuresThisSession += 1
+            TMEjectLog.eject.error(
+                "Foreign TM drive eject FAILED for \(candidate.volumeName): \(report.lastError ?? "unknown")"
+            )
+            let toast = ToastMessage(
+                level: .error,
+                text: "Couldn't eject \(candidate.volumeName)",
+                subtitle: report.lastError,
+                kind: .err
+            )
+            lastToast = toast
+            if toastsEnabled {
+                toastPresenter?.present(level: .error,
+                                         message: toast.text,
+                                         subtitle: toast.subtitle,
+                                         kind: .err,
+                                         actionLabel: nil)
+            }
+        }
     }
 
     func requestPokeNow() {

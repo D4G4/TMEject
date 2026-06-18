@@ -7,6 +7,7 @@ struct SettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
 
     @AppStorage(SettingsKey.autoEjectEnabled)    private var autoEjectEnabled = true
+    @AppStorage(SettingsKey.ejectForeignTMDrives) private var ejectForeignTMDrives = true
     @AppStorage(SettingsKey.cooldownMinutes)     private var cooldownMinutes  = 30
     @AppStorage(SettingsKey.betaChannel)         private var betaChannel      = false
     @AppStorage(SettingsKey.toastsEnabled)       private var toastsEnabled    = true
@@ -28,6 +29,20 @@ struct SettingsView: View {
                             Toggle("", isOn: Binding(
                                 get: { autoEjectEnabled },
                                 set: { coordinator.setAutoEjectEnabled($0) }
+                            ))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                        }
+                        Divider().opacity(0.6)
+                        row(title: "Eject foreign Time Machine drives",
+                            subtitle: "Drives configured as Time Machine destinations on other Macs are ejected 10 seconds after they mount, so they don’t accidentally back up to or contaminate this Mac’s setup.") {
+                            Toggle("", isOn: Binding(
+                                get: { ejectForeignTMDrives },
+                                set: { newValue in
+                                    ejectForeignTMDrives = newValue
+                                    coordinator.respondToEjectForeignTMDrivesChange(newValue)
+                                }
                             ))
                             .labelsHidden()
                             .toggleStyle(.switch)

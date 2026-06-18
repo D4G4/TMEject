@@ -47,14 +47,22 @@ final class FakeToastPresenter: ToastPresenter {
         let subtitle: String?
         let kind: AppCoordinator.ToastKind
         let actionLabel: String?
+        let hasOnAction: Bool
     }
     private(set) var presented: [Presented] = []
+    /// Captures the most recently presented onAction so tests can fire the Cancel
+    /// button on the foreign-TM toast without touching AppKit.
+    private(set) var lastOnAction: (@MainActor () -> Void)?
+
     func present(level: AppCommand.ToastLevel,
                  message: String,
                  subtitle: String?,
                  kind: AppCoordinator.ToastKind,
-                 actionLabel: String?) {
+                 actionLabel: String?,
+                 onAction: (@MainActor () -> Void)?) {
         presented.append(Presented(level: level, message: message, subtitle: subtitle,
-                                    kind: kind, actionLabel: actionLabel))
+                                    kind: kind, actionLabel: actionLabel,
+                                    hasOnAction: onAction != nil))
+        lastOnAction = onAction
     }
 }

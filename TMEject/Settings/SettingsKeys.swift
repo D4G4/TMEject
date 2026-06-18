@@ -15,6 +15,10 @@ enum SettingsKey {
     static let launchAtLogin           = "co.dls.tmeject.launchAtLogin"     // @AppStorage mirror
     static let forceOnboardingModal    = "co.dls.tmeject.forceOnboardingModal"   // Set by Reset Onboarding
     static let translucentSurfaces     = "co.dls.tmeject.translucentSurfaces"    // default false (opaque solid)
+    /// Foreign TM-drive auto-eject. Default true — set at AppCoordinator init when
+    /// no value is stored, mirroring `autoEjectEnabled`. See
+    /// `Observation/DiskAppearedObserver.swift` for the detection path.
+    static let ejectForeignTMDrives    = "co.dls.tmeject.ejectForeignTMDrives"   // default true
 }
 
 enum CooldownOption: Int, CaseIterable, Identifiable {

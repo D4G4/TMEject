@@ -13,6 +13,10 @@ enum AppState: String, Equatable, Sendable, CustomStringConvertible {
 enum EjectSource: String, Sendable, Equatable {
     case manual
     case auto
+    /// Foreign Time Machine drive — a TM-role volume that's NOT in this Mac's
+    /// `tmutil destinationinfo` list. Triggered by `DiskAppearedObserver` + a 10s
+    /// cancellable grace window. See `Observation/DiskAppearedObserver.swift`.
+    case foreign
 }
 
 enum AppEvent: Sendable, Equatable {

@@ -139,6 +139,8 @@ private struct PreviewToast: View {
             Image(systemName: "checkmark").font(.system(size: 13, weight: .bold))
         case .err:
             Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .semibold))
+        case .warning:
+            Image(systemName: "externaldrive.badge.exclamationmark").font(.system(size: 13, weight: .semibold))
         case .busy:
             RingProgress(size: 16, stroke: 2, pct: nil, color: .blue)
         case .neutral:
@@ -150,6 +152,7 @@ private struct PreviewToast: View {
         switch kind {
         case .ok:      return Color.green.opacity(0.16)
         case .err:     return Color.red.opacity(0.16)
+        case .warning: return Color.orange.opacity(0.16)
         case .busy:    return Color.blue.opacity(0.15)
         case .neutral: return Color.gray.opacity(0.16)
         }
@@ -159,6 +162,7 @@ private struct PreviewToast: View {
         switch kind {
         case .ok:      return .green
         case .err:     return .red
+        case .warning: return .orange
         case .busy:    return .blue
         case .neutral: return .secondary
         }

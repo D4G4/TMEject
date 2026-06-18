@@ -7,7 +7,21 @@ protocol ToastPresenter: AnyObject {
                  message: String,
                  subtitle: String?,
                  kind: AppCoordinator.ToastKind,
-                 actionLabel: String?)
+                 actionLabel: String?,
+                 onAction: (@MainActor () -> Void)?)
+}
+
+@MainActor
+extension ToastPresenter {
+    /// Legacy convenience — keeps existing call sites that don't need a button action.
+    func present(level: AppCommand.ToastLevel,
+                 message: String,
+                 subtitle: String?,
+                 kind: AppCoordinator.ToastKind,
+                 actionLabel: String?) {
+        present(level: level, message: message, subtitle: subtitle, kind: kind,
+                actionLabel: actionLabel, onAction: nil)
+    }
 }
 
 @MainActor
@@ -22,13 +36,25 @@ final class ToastOverlay: ToastPresenter {
                  message: String,
                  subtitle: String?,
                  kind: AppCoordinator.ToastKind,
-                 actionLabel: String?) {
+                 actionLabel: String?,
+                 onAction: (@MainActor () -> Void)? = nil) {
         dismissTask?.cancel()
         let panel = panel ?? makePanel()
         self.panel = panel
 
+        // When the toast has a clickable action, the panel needs to accept mouse
+        // events. Reverts to ignoring for plain status toasts so the panel never
+        // intercepts clicks meant for windows underneath.
+        let wrappedAction: (() -> Void)? = onAction.map { handler in
+            { [weak self] in
+                handler()
+                self?.dismiss()
+            }
+        }
+        panel.ignoresMouseEvents = (wrappedAction == nil)
+
         let view = ToastView(kind: kind, title: message, subtitle: subtitle,
-                              actionLabel: actionLabel, onAction: nil)
+                              actionLabel: actionLabel, onAction: wrappedAction)
         let host = NSHostingController(rootView: view)
         panel.contentViewController = host
 
@@ -151,6 +177,9 @@ private struct ToastView: View {
         case .err:
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 13, weight: .semibold))
+        case .warning:
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 13, weight: .semibold))
         case .busy:
             RingProgress(size: 16, stroke: 2, pct: nil, color: .blue)
         case .neutral:
@@ -163,6 +192,7 @@ private struct ToastView: View {
         switch kind {
         case .ok:      return Color.green.opacity(0.16)
         case .err:     return Color.red.opacity(0.16)
+        case .warning: return Color.orange.opacity(0.16)
         case .busy:    return Color.blue.opacity(0.15)
         case .neutral: return Color.gray.opacity(0.16)
         }
@@ -172,6 +202,7 @@ private struct ToastView: View {
         switch kind {
         case .ok:      return .green
         case .err:     return .red
+        case .warning: return .orange
         case .busy:    return .blue
         case .neutral: return .secondary
         }
