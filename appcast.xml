@@ -23,6 +23,18 @@
     <description>TMEject release feed</description>
     <language>en</language>
     <item>
+      <title>TMEject v0.1.2</title>
+      <link>https://github.com/D4G4/TMEject/releases/tag/v0.1.2</link>
+      <sparkle:version>58</sparkle:version>
+      <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 19 Jun 2026 00:10:46 +0000</pubDate>
+      <description><![CDATA[<h3 style="margin-top:0">What's new in 0.1.2</h3><ul><li>Register SMAppService on first install (Launch at login defaults ON)</li><li>Add Check for Updates button</li></ul><p style="margin-bottom:0">Full release on <a href="https://github.com/D4G4/TMEject/releases/tag/v0.1.2">GitHub</a>.</p>]]></description>
+      <enclosure url="https://github.com/D4G4/TMEject/releases/download/v0.1.2/TMEject.dmg"
+                 type="application/octet-stream"
+                 sparkle:edSignature="CvXlpi/K1Oc8CPeBIT91v/KUSaRFqr5UKZ8H1MXSezMFQPgsQPdFNZgBhkVs6YAMCjN9+8z7vOMQOkshBpuEAw==" length="2335861" />
+    </item>
+    <item>
       <title>TMEject v0.1.1</title>
       <link>https://github.com/D4G4/TMEject/releases/tag/v0.1.1</link>
       <sparkle:version>55</sparkle:version>
