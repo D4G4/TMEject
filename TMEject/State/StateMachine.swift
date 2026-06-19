@@ -205,7 +205,8 @@ struct StateMachine: Sendable {
                 state = .idle
                 return .accepted([
                     .setLastError(nil),
-                    .notify(title: "Drive ejected", body: "Time Machine drive ejected safely."),
+                    // No system notification on eject success — toast covers it
+                    // and the drive being unmounted is itself the signal.
                     .showToast(level: .success, message: "Drive ejected")
                 ])
             } else {
@@ -213,6 +214,9 @@ struct StateMachine: Sendable {
                 let summary = errorSummary ?? "Unknown eject failure"
                 return .accepted([
                     .setLastError(summary),
+                    // System notification stays here — eject failure is the
+                    // canonical "user needs to know" event even when the screen
+                    // is locked / they walked away.
                     .notify(title: "Eject failed", body: summary),
                     .showToast(level: .error, message: "Eject failed: \(summary)")
                 ])

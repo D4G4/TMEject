@@ -1,23 +1,20 @@
 import Foundation
 
-/// The three-step first-install flow. Mutually exclusive from — and presented BEFORE —
-/// the Launch HUD. The HUD is a per-launch locator; this flow runs only on first install
-/// (or when the user explicitly resets onboarding from Settings → Troubleshooting).
+/// First-install onboarding pages, in flow order.
 ///
-/// Why a flow at all (vs. the pre-v0.2 HUD-only path): the previous boot path silently
-/// flipped `hasCompletedOnboarding = true` and only showed the locator. A fresh install
-/// got zero intro, no permission asks — most importantly, **Full Disk Access was never
-/// requested**. Auto-eject defaults ON (see `docs/architecture.md` → "Defaults rationale"),
-/// so without FDA the app was silently broken: the snapshot-path delta success rule can't
-/// run without `tmutil latestbackup`, which needs FDA.
+/// **Notifications BEFORE FullDiskAccess** is deliberate: granting FDA terminates
+/// the TMEject process (macOS behaviour, not ours), so any step shown AFTER the
+/// FDA step would never reach the user. Notification permission has to be asked
+/// before we deep-link to the FDA pane.
+///
+/// We promise "very few notifications" in the onboarding copy and keep that
+/// promise: only eject failures + FDA-required reminders + foreign-drive eject
+/// failures actually fire system notifications. Successes are silent (the drive
+/// being ejected IS the success).
 enum OnboardingStep: Int, CaseIterable, Sendable, Equatable {
     case intro = 0
-    case fullDiskAccess = 1
-
-    // Removed: case notifications. Granting FDA terminates the app (macOS
-    // behaviour, not ours), and on relaunch the user never reaches a third
-    // step. In-app toasts cover the visible notification needs already; system
-    // notifications via UNUserNotificationCenter are not worth the lost step.
+    case notifications = 1
+    case fullDiskAccess = 2
 
     var pageIndex: Int { rawValue }
 
