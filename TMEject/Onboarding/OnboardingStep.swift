@@ -13,7 +13,11 @@ import Foundation
 enum OnboardingStep: Int, CaseIterable, Sendable, Equatable {
     case intro = 0
     case fullDiskAccess = 1
-    case notifications = 2
+
+    // Removed: case notifications. Granting FDA terminates the app (macOS
+    // behaviour, not ours), and on relaunch the user never reaches a third
+    // step. In-app toasts cover the visible notification needs already; system
+    // notifications via UNUserNotificationCenter are not worth the lost step.
 
     var pageIndex: Int { rawValue }
 

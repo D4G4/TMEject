@@ -68,7 +68,7 @@ final class OnboardingFlowModel: ObservableObject {
             // Sync the coordinator's published value so the rest of the UI reflects
             // the grant without waiting for the next debounced auto-probe.
             coordinator.refreshFDAState(force: true)
-            advance(to: .notifications)
+            complete()
         } else {
             fdaError = "Full Disk Access still isn't granted. In System Settings → " +
                 "Privacy & Security → Full Disk Access, toggle TMEject on, then tap " +
@@ -79,25 +79,6 @@ final class OnboardingFlowModel: ObservableObject {
     func tapSkipFDA() {
         UIActionLogger.buttonTapped("Skip for now", context: "Onboarding/FDA")
         fdaError = nil
-        advance(to: .notifications)
-    }
-
-    // MARK: - Step 3
-
-    /// Request notification authorization and finish, regardless of result. Per the spec
-    /// we don't gate completion on the user accepting — denying notifications is a
-    /// legitimate choice and the in-app toast + menu-bar tint fallback already handles it.
-    func tapAllowNotifications() async {
-        UIActionLogger.buttonTapped("Allow", context: "Onboarding/Notifications")
-        guard !isWorking else { return }
-        isWorking = true
-        _ = await notifier.requestAuthorizationIfNeeded()
-        isWorking = false
-        complete()
-    }
-
-    func tapSkipNotifications() {
-        UIActionLogger.buttonTapped("Skip", context: "Onboarding/Notifications")
         complete()
     }
 
@@ -154,13 +135,6 @@ struct OnboardingFlowView: View {
                     onOpenSettings: { model.tapOpenSystemSettingsForFDA() },
                     onConfirmGranted: { Task { await model.tapIveGrantedFDA() } },
                     onSkip: { model.tapSkipFDA() }
-                )
-                .transition(.opacity)
-            case .notifications:
-                OnboardingNotificationsStep(
-                    isWorking: model.isWorking,
-                    onAllow: { Task { await model.tapAllowNotifications() } },
-                    onSkip: { model.tapSkipNotifications() }
                 )
                 .transition(.opacity)
             }
@@ -367,56 +341,6 @@ struct OnboardingFDAStep: View {
             .padding(.bottom, 28)
         }
         .animation(.easeInOut(duration: 0.15), value: errorMessage)
-    }
-}
-
-// MARK: - Step 3: Notifications
-
-struct OnboardingNotificationsStep: View {
-    let isWorking: Bool
-    let onAllow: () -> Void
-    let onSkip: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-
-            stepIcon(systemName: "bell.fill", tint: Color.secondary)
-                .padding(.bottom, 22)
-
-            Text("Enable Notifications")
-                .font(.system(size: 19, weight: .semibold))
-                .multilineTextAlignment(.center)
-                .padding(.bottom, 12)
-
-            Text("Get notified when a backup finishes, an eject fails, or a foreign " +
-                 "drive is detected. You can change this anytime in System Settings.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .lineSpacing(2)
-                .padding(.horizontal, 40)
-
-            Spacer(minLength: 0)
-
-            VStack(spacing: 10) {
-                Button(action: onAllow) {
-                    HStack(spacing: 6) {
-                        if isWorking { ProgressView().controlSize(.small).scaleEffect(0.8) }
-                        Text(isWorking ? "Requesting…" : "Allow")
-                    }
-                }
-                .buttonStyle(OnboardingPrimaryButtonStyle())
-                .disabled(isWorking)
-                .keyboardShortcut(.defaultAction)
-
-                Button("Skip", action: onSkip)
-                    .buttonStyle(OnboardingTertiaryLinkStyle())
-                    .padding(.top, 2)
-            }
-            .padding(.horizontal, 40)
-            .padding(.bottom, 32)
-        }
     }
 }
 

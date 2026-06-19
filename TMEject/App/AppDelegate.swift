@@ -102,8 +102,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
 
         if !didOnboarding || forceModal {
+            // Granting FDA terminates the app process (macOS, not us). On relaunch
+            // the user already accomplished the goal of the FDA step. If FDA reads
+            // as granted, flip hasCompletedOnboarding=true and skip straight to HUD
+            // — the user shouldn't have to see the intro again just to reach a
+            // "done!" screen. Reset Onboarding (forceModal) overrides this so a
+            // user can rewatch the intro deliberately.
+            if !forceModal,
+               coordinator.fdaState == .granted {
+                UIActionLogger.onboardingStep(
+                    "skipping onboarding flow — FDA already granted, auto-completing"
+                )
+                defaults.set(true, forKey: SettingsKey.hasCompletedOnboarding)
+                presentLaunchHUD()
+                return
+            }
+
             UIActionLogger.onboardingStep(
-                "showing three-step flow (didOnboarding=\(didOnboarding), forceModal=\(forceModal))"
+                "showing onboarding flow (didOnboarding=\(didOnboarding), forceModal=\(forceModal))"
             )
             onboardingFlow.show(coordinator: coordinator) { [weak self] in
                 self?.presentLaunchHUD()
