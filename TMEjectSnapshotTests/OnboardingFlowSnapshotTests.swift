@@ -72,25 +72,6 @@ final class OnboardingFlowSnapshotTests: SnapshotTestCase {
                               colorScheme: .light, translucent: false)
     }
 
-    // MARK: - Step 3: Notifications
-
-    private func renderNotifications(theme: ColorScheme, translucent: Bool) {
-        let view = OnboardingNotificationsStep(
-            isWorking: false,
-            onAllow: {},
-            onSkip: {}
-        )
-        .frame(width: 480, height: 540)
-        .surfaceBackground(.window)
-        let name = SnapshotName.surface("onboarding_flow_notifications",
-                                         theme: theme, translucent: translucent)
-        assertHostedSnapshot(of: view, named: name,
-                              width: 480, height: 540,
-                              colorScheme: theme, translucent: translucent)
-    }
-
-    func testNotificationsLightOpaque()      { renderNotifications(theme: .light, translucent: false) }
-    func testNotificationsDarkOpaque()       { renderNotifications(theme: .dark,  translucent: false) }
-    func testNotificationsLightTranslucent() { renderNotifications(theme: .light, translucent: true) }
-    func testNotificationsDarkTranslucent()  { renderNotifications(theme: .dark,  translucent: true) }
+    // Notifications step removed — granting FDA terminates the app and the
+    // user never reached the third step. See OnboardingStep enum comment.
 }
