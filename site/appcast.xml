@@ -23,6 +23,18 @@
     <description>TMEject release feed</description>
     <language>en</language>
     <item>
+      <title>TMEject v0.1.4</title>
+      <link>https://github.com/D4G4/TMEject/releases/tag/v0.1.4</link>
+      <sparkle:version>61</sparkle:version>
+      <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 19 Jun 2026 00:45:16 +0000</pubDate>
+      <description><![CDATA[<h3 style="margin-top:0">What's new in 0.1.4</h3><ul><li>Restore Notifications step before FDA, fire only on failures</li><li>Drop Notifications step, auto-complete on FDA-granted relaunch</li></ul><p style="margin-bottom:0">Full release on <a href="https://github.com/D4G4/TMEject/releases/tag/v0.1.4">GitHub</a>.</p>]]></description>
+      <enclosure url="https://github.com/D4G4/TMEject/releases/download/v0.1.4/TMEject.dmg"
+                 type="application/octet-stream"
+                 sparkle:edSignature="JkA6k1YQxxYeuHQUX1xwmzYhn9PzPK+Fkbn7Cs+h43YkEkXTjEhtFQ+858SQEaGe2LsS97M32aefQ904TB6UDg==" length="2335936" />
+    </item>
+    <item>
       <title>TMEject v0.1.3</title>
       <link>https://github.com/D4G4/TMEject/releases/tag/v0.1.3</link>
       <sparkle:version>59</sparkle:version>
