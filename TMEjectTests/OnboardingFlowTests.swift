@@ -28,15 +28,56 @@ final class OnboardingFlowTests: XCTestCase {
                                     onFinish: finished)
     }
 
-    // MARK: - Step progression — Intro → FDA → done
+    // MARK: - Step progression — Intro → Notifications → FDA
 
-    func testGetStartedAdvancesToFDA() {
+    func testGetStartedAdvancesToNotifications() {
         let model = makeModel(prober: FakeFullDiskAccessProber(.denied),
                               notifier: FakeSystemNotifier(),
                               defaults: freshDefaults())
         XCTAssertEqual(model.step, .intro)
         model.tapGetStarted()
+        XCTAssertEqual(model.step, .notifications)
+    }
+
+    func testAllowNotificationsAdvancesToFDA() async {
+        let notifier = FakeSystemNotifier()
+        await notifier.setAuthState(.notDetermined)
+        let model = makeModel(prober: FakeFullDiskAccessProber(.denied),
+                              notifier: notifier,
+                              defaults: freshDefaults())
+        model.tapGetStarted()
+        await model.tapAllowNotifications()
         XCTAssertEqual(model.step, .fullDiskAccess)
+        let requestCount = await notifier.authRequestCount
+        XCTAssertEqual(requestCount, 1, "Allow must invoke the notification request")
+    }
+
+    func testSkipNotificationsAdvancesToFDAWithoutRequesting() async {
+        let notifier = FakeSystemNotifier()
+        let model = makeModel(prober: FakeFullDiskAccessProber(.denied),
+                              notifier: notifier,
+                              defaults: freshDefaults())
+        model.tapGetStarted()
+        model.tapSkipNotifications()
+        XCTAssertEqual(model.step, .fullDiskAccess)
+        let requestCount = await notifier.authRequestCount
+        XCTAssertEqual(requestCount, 0, "Skip must NOT invoke the notification request")
+    }
+
+    // MARK: - FDA — denied loops, granted completes, skip completes
+
+    func testFDADeniedStaysWithError() async {
+        let prober = FakeFullDiskAccessProber(.denied)
+        let defaults = freshDefaults()
+        let model = makeModel(prober: prober,
+                              notifier: FakeSystemNotifier(),
+                              defaults: defaults)
+        model.tapGetStarted()
+        model.tapSkipNotifications()  // get to FDA quickly
+        await model.tapIveGrantedFDA()
+        XCTAssertEqual(model.step, .fullDiskAccess)
+        XCTAssertNotNil(model.fdaError, "denied probe should surface an inline error")
+        XCTAssertFalse(defaults.bool(forKey: SettingsKey.hasCompletedOnboarding))
     }
 
     func testFDADeniedThenGrantedCompletes() async {
@@ -49,16 +90,15 @@ final class OnboardingFlowTests: XCTestCase {
                               finished: { finishCount += 1 })
 
         model.tapGetStarted()
+        model.tapSkipNotifications()  // get to FDA quickly
         XCTAssertEqual(model.step, .fullDiskAccess)
 
-        // Queue: [.denied (initial), .granted] — first tap consumes .denied,
-        // second tap consumes .granted.
+        // Queue: [.denied (initial), .granted]
         await prober.enqueue(.granted)
 
-        // First tap — prober returns .denied → stays + sets error.
         await model.tapIveGrantedFDA()
         XCTAssertEqual(model.step, .fullDiskAccess)
-        XCTAssertNotNil(model.fdaError, "denied probe should surface an inline error")
+        XCTAssertNotNil(model.fdaError)
         XCTAssertFalse(defaults.bool(forKey: SettingsKey.hasCompletedOnboarding))
 
         // User flips the toggle, taps again — prober returns .granted → completes.
@@ -76,14 +116,13 @@ final class OnboardingFlowTests: XCTestCase {
                               notifier: FakeSystemNotifier(),
                               defaults: defaults)
         model.tapGetStarted()
+        model.tapSkipNotifications()
         await model.tapIveGrantedFDA()
         XCTAssertEqual(model.step, .fullDiskAccess,
                        ".unknown should be treated as not-yet-granted")
         XCTAssertNotNil(model.fdaError)
         XCTAssertFalse(defaults.bool(forKey: SettingsKey.hasCompletedOnboarding))
     }
-
-    // MARK: - Skip path
 
     func testFDASkipCompletes() {
         let defaults = freshDefaults()
@@ -93,6 +132,7 @@ final class OnboardingFlowTests: XCTestCase {
                               defaults: defaults,
                               finished: { finishCount += 1 })
         model.tapGetStarted()
+        model.tapSkipNotifications()
         XCTAssertEqual(model.step, .fullDiskAccess)
         model.tapSkipFDA()
         XCTAssertTrue(defaults.bool(forKey: SettingsKey.hasCompletedOnboarding),

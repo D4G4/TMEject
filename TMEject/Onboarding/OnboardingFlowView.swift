@@ -44,10 +44,29 @@ final class OnboardingFlowModel: ObservableObject {
 
     func tapGetStarted() {
         UIActionLogger.buttonTapped("Get started", context: "Onboarding/Intro")
+        advance(to: .notifications)
+    }
+
+    // MARK: - Step 2 — Notifications
+
+    /// Ask for UN authorization. Result doesn't gate progression — denying is a
+    /// legitimate choice; we just skip system notifications and the user still
+    /// gets toasts + menu bar icon state.
+    func tapAllowNotifications() async {
+        UIActionLogger.buttonTapped("Allow", context: "Onboarding/Notifications")
+        guard !isWorking else { return }
+        isWorking = true
+        _ = await notifier.requestAuthorizationIfNeeded()
+        isWorking = false
         advance(to: .fullDiskAccess)
     }
 
-    // MARK: - Step 2
+    func tapSkipNotifications() {
+        UIActionLogger.buttonTapped("Skip", context: "Onboarding/Notifications")
+        advance(to: .fullDiskAccess)
+    }
+
+    // MARK: - Step 3 — Full Disk Access
 
     func tapOpenSystemSettingsForFDA() {
         UIActionLogger.buttonTapped("Open System Settings", context: "Onboarding/FDA")
@@ -128,6 +147,13 @@ struct OnboardingFlowView: View {
             case .intro:
                 OnboardingIntroStep(onPrimary: { model.tapGetStarted() })
                     .transition(.opacity)
+            case .notifications:
+                OnboardingNotificationsStep(
+                    isWorking: model.isWorking,
+                    onAllow: { Task { await model.tapAllowNotifications() } },
+                    onSkip: { model.tapSkipNotifications() }
+                )
+                .transition(.opacity)
             case .fullDiskAccess:
                 OnboardingFDAStep(
                     isWorking: model.isWorking,
@@ -341,6 +367,61 @@ struct OnboardingFDAStep: View {
             .padding(.bottom, 28)
         }
         .animation(.easeInOut(duration: 0.15), value: errorMessage)
+    }
+}
+
+// MARK: - Step 2: Notifications
+
+/// Notifications opt-in. Copy explicitly promises "very few notifications" —
+/// we honour that by only firing UN notifications on actual failures (eject
+/// failed after retries, foreign-drive eject failed, FDA required nag).
+/// Successes are silent — the drive being ejected IS the signal.
+struct OnboardingNotificationsStep: View {
+    let isWorking: Bool
+    let onAllow: () -> Void
+    let onSkip: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            stepIcon(systemName: "bell.fill", tint: Color.secondary)
+                .padding(.bottom, 22)
+
+            Text("Stay informed, quietly")
+                .font(.system(size: 19, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .padding(.bottom, 12)
+
+            Text("TMEject sends very few notifications — only when something needs " +
+                 "your attention (an eject failed, a permission is missing). " +
+                 "You can change this anytime in System Settings.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(2)
+                .padding(.horizontal, 40)
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: 10) {
+                Button(action: onAllow) {
+                    HStack(spacing: 6) {
+                        if isWorking { ProgressView().controlSize(.small).scaleEffect(0.8) }
+                        Text(isWorking ? "Requesting…" : "Allow")
+                    }
+                }
+                .buttonStyle(OnboardingPrimaryButtonStyle())
+                .disabled(isWorking)
+                .keyboardShortcut(.defaultAction)
+
+                Button("Skip", action: onSkip)
+                    .buttonStyle(OnboardingTertiaryLinkStyle())
+                    .padding(.top, 2)
+            }
+            .padding(.horizontal, 40)
+            .padding(.bottom, 32)
+        }
     }
 }
 
