@@ -315,17 +315,87 @@ html.paged { scroll-snap-type: y mandatory; scroll-padding-top: 0; }
 .pagedots a:hover { background: rgba(127,127,127,0.55); }
 .pagedots a.active { background: var(--ritual); transform: scale(1.3); }
 
+/* mobile-only hint shown beneath CTA on touch / narrow viewports */
+.mobile-hint { display: none; }
+
 /* ============================================================ RESPONSIVE */
 @media (max-width: 880px) {
   html.paged { scroll-snap-type: none; }
-  .page { min-height: auto; padding: 88px 0 60px; overflow: visible; }
+
+  /* No more vertical centering / 100vh sections — sections collapse to content. */
+  .page {
+    min-height: auto;
+    padding: 56px 0 48px;
+    overflow: visible;
+    justify-content: flex-start;
+  }
+  .wrap { padding: 0 22px; }
+
+  .page-hero { padding: 70px 0 44px; }
   .page-hero .wrap { height: auto; }
-  .page-hero { padding: 110px 0 60px; }
   #livePop { display: none; }
+
+  /* Strip the macOS chrome down to brand + Download — the rest is desktop cosplay. */
+  .macbar .sysicon,
+  .macbar .tme-item,
+  .macbar .clock,
   .macbar .menu:not(.dl) { display: none; }
-  .ritual-grid { grid-template-columns: 1fr; }
-  .ritual-vis { order: -1; }
-  .feat-grid { grid-template-columns: 1fr; }
-  .page-download .footer { position: static; margin-top: 56px; }
+  .macbar { padding: 0 10px 0 12px; }
+
+  /* Big radial glows are clipped, expensive, and cause Safari scroll jank. */
+  .page-hero .hero-glow2,
+  .ritual-sec .glow,
+  .page-download .glow { display: none; }
+
+  /* HERO */
+  .page-hero h1 { font-size: clamp(38px, 9vw, 56px); }
+  .page-hero h1 br { display: none; }
+  .page-hero .hero-lead { font-size: 16px; margin-top: 16px; max-width: none; line-height: 1.5; }
+  .page-hero .hero-cta { margin-top: 22px; gap: 12px; }
+  .page-hero .hero-meta { margin-top: 14px; font-size: 12.5px; gap: 8px; }
+  .mobile-hint {
+    display: block; margin-top: 14px; font-size: 12.5px;
+    color: var(--ink-3); max-width: 360px; line-height: 1.45;
+  }
+
+  /* RITUAL — single column, keep visual after copy so the page reads top-down */
+  .ritual-grid { grid-template-columns: 1fr; gap: 28px; }
+  .ritual-vis { order: 0; }
+  .ritual-copy h2 { font-size: clamp(26px, 7vw, 36px); }
+  .ritual-copy p { font-size: 15.5px; margin-top: 14px; max-width: none; }
+  .confirm-card { width: 100%; max-width: 320px; padding: 24px 20px; }
+  .shortcut-display { gap: 6px; margin-top: 22px; flex-wrap: wrap; }
+  .big-key { min-width: 48px; height: 52px; padding: 0 12px; font-size: 20px; border-radius: 11px; }
+  .shortcut-cap { margin-top: 14px; }
+
+  /* FEATURES */
+  .feat-grid { grid-template-columns: 1fr; gap: 12px; }
+  .page-features .feat-head h2 { font-size: clamp(24px, 6vw, 32px); }
+  .page-features .feat-head p { font-size: 15px; }
+  .page-features .feat-card { padding: 16px 18px 18px; }
+
+  /* STATES */
+  .states-sec .states-head h2 { font-size: clamp(24px, 6vw, 30px); }
+  .states-sec .states-head p { font-size: 15px; }
+  .states-sec .state-item { padding: 11px 14px; }
+
+  /* DOWNLOAD */
+  .page-download h2 { font-size: clamp(28px, 7vw, 40px); }
+  .page-download p { font-size: 16px; margin-top: 14px; }
+  .page-download .hero-cta { margin-top: 24px; }
+  .cta-reqs { margin-top: 16px; font-size: 12.5px; gap: 8px; }
+  .page-download .footer { position: static; margin-top: 40px; padding: 22px 0; }
+  .footer .wrap { justify-content: flex-start; gap: 14px 24px; }
+  .foot-links { gap: 16px 20px; flex-wrap: wrap; }
+
   .pagedots { display: none; }
+}
+
+/* Extra-narrow phones (iPhone SE 1, 320px) */
+@media (max-width: 380px) {
+  .wrap { padding: 0 18px; }
+  .big-key { min-width: 44px; height: 48px; padding: 0 10px; font-size: 18px; border-radius: 10px; }
+  .shortcut-display { gap: 5px; }
+  .macbar .app { padding: 3px 6px; }
+  .btn { padding: 0 18px; }
 }

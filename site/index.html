@@ -95,6 +95,7 @@
         </a>
         <a class="btn btn-ghost" href="#ritual">See the ritual</a>
       </div>
+      <p class="mobile-hint">TMEject is a Mac app — open this page on your Mac to install.</p>
       <div class="hero-meta">
         <span>macOS 14+ (Sonoma, Sequoia, Tahoe)</span><span class="dot"></span>
         <span>Universal</span><span class="dot"></span>
@@ -410,7 +411,9 @@
       lastId = id;
       const showPop = (id === 'hero' || id === 'states') && isWide();
       livePop.classList.toggle('pop--hidden', !showPop);
-      if (id === 'states' && isWide()) startPlay(); else stopPlay();
+      /* On mobile the popover is hidden, but the state list still cycles
+         so the "Five states" section shows each one in turn. */
+      if (id === 'states') startPlay(); else stopPlay();
     }
   }
   window.addEventListener('scroll', onScroll, { passive: true });
