@@ -104,6 +104,14 @@ struct SettingsView: View {
                         row(title: "Login item error", subtitle: err) { EmptyView() }
                     }
                     Divider().opacity(0.6)
+                    row(title: "Software updates",
+                        subtitle: "Sparkle checks daily in the background. Click to check now.") {
+                        Button("Check for Updates…") {
+                            TMEjectUpdater.shared.checkForUpdates()
+                        }
+                        .controlSize(.small)
+                    }
+                    Divider().opacity(0.6)
                     row(title: "Receive beta updates",
                         subtitle: "Get new versions earlier. May be less stable.") {
                         Toggle("", isOn: $betaChannel)
