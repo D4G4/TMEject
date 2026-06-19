@@ -181,6 +181,12 @@ final class AppCoordinator: ObservableObject {
         if defaults.object(forKey: SettingsKey.ejectForeignTMDrives) == nil {
             defaults.set(true, forKey: SettingsKey.ejectForeignTMDrives)
         }
+        // Launch at login defaults ON for fresh installs. The @AppStorage mirror
+        // is missing → register with SMAppService once. Subsequent launches read
+        // the user's actual choice (which may be off if they later untoggled it).
+        if defaults.object(forKey: SettingsKey.launchAtLogin) == nil {
+            try? loginItem.register()
+        }
         self.loginItemStatus = loginItem.currentStatus()
         defaults.set(self.loginItemStatus == .enabled, forKey: SettingsKey.launchAtLogin)
     }
