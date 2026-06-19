@@ -126,7 +126,10 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
                         "lastToast still set for menu bar surface even when overlay suppressed")
     }
 
-    func testEjectSuccess_NotifiesSystemEjectedCategory() async {
+    func testEjectSuccess_DoesNotFireSystemNotification() async {
+        // v0.1.4: success path is intentionally silent on system notifications.
+        // Toast + drive being unmounted carry the signal; the user opted into
+        // "very few notifications" during onboarding and we respect that.
         let presenter = FakeToastPresenter()
         let notifier = FakeSystemNotifier()
         await notifier.setAuthState(.authorized)
@@ -140,8 +143,7 @@ final class CoordinatorNotificationIntegrationTests: XCTestCase {
         await coord.deliverForTesting(.ejectAttemptCompleted(success: true, errorSummary: nil))
         let delivered = await notifier.delivered
         let successNotif = delivered.first(where: { $0.title == "Drive ejected" })
-        XCTAssertNotNil(successNotif)
-        XCTAssertEqual(successNotif?.category, .generic)
+        XCTAssertNil(successNotif, "success path must NOT fire a system notification")
         task.cancel()
     }
 

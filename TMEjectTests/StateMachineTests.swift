@@ -297,7 +297,11 @@ final class StateMachineTests: XCTestCase {
         let cmds = accept(m.handle(.ejectAttemptCompleted(success: true, errorSummary: nil))) ?? []
         XCTAssertEqual(m.state, .idle)
         XCTAssertTrue(cmds.contains(.setLastError(nil)))
-        XCTAssertTrue(cmds.contains(where: { if case .notify(let t, _) = $0 { return t == "Drive ejected" }; return false }))
+        // Success path is intentionally silent on system notifications — the
+        // toast + drive being unmounted are the user-visible signals.
+        XCTAssertFalse(cmds.contains(where: { if case .notify = $0 { return true }; return false }),
+                       "success path must not fire a system notification")
+        XCTAssertTrue(cmds.contains(.showToast(level: .success, message: "Drive ejected")))
     }
 
     func testEjectFailureGoesToIdleEjectFailedAndSetsLastError() {

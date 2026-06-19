@@ -8,7 +8,15 @@ final class LoginItemTests: XCTestCase {
         loginItem: FakeLoginItemManager,
         defaults: UserDefaults
     ) -> AppCoordinator {
-        AppCoordinator(
+        // Seed the launchAtLogin key so the coordinator's init doesn't fire its
+        // first-install auto-register (added in v0.1.2 — see AppCoordinator.init
+        // comment). These tests exercise the explicit setLaunchAtLogin API, not
+        // the first-install path; pretending the key was previously written keeps
+        // registerCount honest.
+        if defaults.object(forKey: SettingsKey.launchAtLogin) == nil {
+            defaults.set(false, forKey: SettingsKey.launchAtLogin)
+        }
+        return AppCoordinator(
             tmutil: FakeTMUtilClient(),
             ejector: Ejector(unmount: FakeUnmountBridge(), lsof: FakeLsofProbe(),
                              clock: FakeClock(),
