@@ -294,3 +294,35 @@ struct SettingsView: View {
         }
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("Settings · Opaque · Light") {
+    SettingsView(coordinator: AppCoordinator.preview(
+        fdaState: .granted, translucentSurfaces: false
+    ))
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Settings · Opaque · Dark") {
+    SettingsView(coordinator: AppCoordinator.preview(
+        fdaState: .granted, translucentSurfaces: false
+    ))
+    .environment(\.colorScheme, .dark)
+}
+
+#Preview("Settings · Translucent · Dark") {
+    SettingsView(coordinator: AppCoordinator.preview(
+        fdaState: .granted, translucentSurfaces: true
+    ))
+    .environment(\.colorScheme, .dark)
+}
+
+#Preview("Settings · FDA pill visible · Light") {
+    SettingsView(coordinator: AppCoordinator.preview(
+        fdaState: .denied, autoEjectEnabled: true
+    ))
+    .environment(\.colorScheme, .light)
+}
+#endif

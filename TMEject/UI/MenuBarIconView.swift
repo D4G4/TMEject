@@ -50,3 +50,51 @@ struct MenuBarIconView: View {
         .frame(width: 18, height: 18)
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+private struct MenuBarIconPreviewRow: View {
+    let label: String
+    let state: AppState
+    var ejectPct: Double = 0
+
+    var body: some View {
+        HStack(spacing: 14) {
+            MenuBarIconView(state: state, ejectPct: ejectPct)
+                .frame(width: 22, height: 22)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+#Preview("All states · Light") {
+    VStack(alignment: .leading, spacing: 12) {
+        MenuBarIconPreviewRow(label: "idle", state: .idle)
+        MenuBarIconPreviewRow(label: "backingUp", state: .backingUp)
+        MenuBarIconPreviewRow(label: "confirming", state: .confirming)
+        MenuBarIconPreviewRow(label: "ejecting · 50%", state: .ejecting, ejectPct: 50)
+        MenuBarIconPreviewRow(label: "idleEjectFailed", state: .idleEjectFailed)
+    }
+    .padding(20)
+    .frame(width: 220, alignment: .leading)
+    .background(Color.surfacePopover)
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("All states · Dark") {
+    VStack(alignment: .leading, spacing: 12) {
+        MenuBarIconPreviewRow(label: "idle", state: .idle)
+        MenuBarIconPreviewRow(label: "backingUp", state: .backingUp)
+        MenuBarIconPreviewRow(label: "confirming", state: .confirming)
+        MenuBarIconPreviewRow(label: "ejecting · 50%", state: .ejecting, ejectPct: 50)
+        MenuBarIconPreviewRow(label: "idleEjectFailed", state: .idleEjectFailed)
+    }
+    .padding(20)
+    .frame(width: 220, alignment: .leading)
+    .background(Color.surfacePopover)
+    .environment(\.colorScheme, .dark)
+}
+#endif

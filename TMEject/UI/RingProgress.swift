@@ -43,3 +43,23 @@ struct RingProgress: View {
         }
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("Determinate · 0/50/100") {
+    HStack(spacing: 24) {
+        RingProgress(size: 56, stroke: 4, pct: 0, color: .blue)
+        RingProgress(size: 56, stroke: 4, pct: 50, color: .blue)
+        RingProgress(size: 56, stroke: 4, pct: 100, color: .blue)
+    }
+    .padding(24)
+    .background(Color.surfacePopover)
+}
+
+#Preview("Indeterminate · spinning") {
+    RingProgress(size: 56, stroke: 4, pct: nil, color: .ritual)
+        .padding(24)
+        .background(Color.surfacePopover)
+}
+#endif

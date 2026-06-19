@@ -414,3 +414,64 @@ struct NeutralButtonStyle: ButtonStyle {
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("Idle · Light") {
+    MenuBarPopoverView(
+        coordinator: AppCoordinator.preview(state: .idle, drivePresent: true),
+        openPreferences: {}
+    )
+    .frame(width: Spacing.popoverWidth)
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Backing up 45% · Light") {
+    MenuBarPopoverView(
+        coordinator: AppCoordinator.preview(state: .backingUp, backupPct: 45),
+        openPreferences: {}
+    )
+    .frame(width: Spacing.popoverWidth)
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Confirming · Light") {
+    MenuBarPopoverView(
+        coordinator: AppCoordinator.preview(state: .confirming),
+        openPreferences: {}
+    )
+    .frame(width: Spacing.popoverWidth)
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Ejecting 60% · attempt 2 · Light") {
+    MenuBarPopoverView(
+        coordinator: AppCoordinator.preview(state: .ejecting, ejectPct: 60, ejectAttempt: 2),
+        openPreferences: {}
+    )
+    .frame(width: Spacing.popoverWidth)
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Idle eject failed · Dark") {
+    MenuBarPopoverView(
+        coordinator: AppCoordinator.preview(
+            state: .idleEjectFailed,
+            lastError: "held by mds_stores (pid 412), Finder (pid 581)"
+        ),
+        openPreferences: {}
+    )
+    .frame(width: Spacing.popoverWidth)
+    .environment(\.colorScheme, .dark)
+}
+
+#Preview("Ritual confirm overlay · Light") {
+    MenuBarPopoverView(
+        coordinator: AppCoordinator.preview(state: .idle, ritualConfirmPct: 60),
+        openPreferences: {}
+    )
+    .frame(width: Spacing.popoverWidth)
+    .environment(\.colorScheme, .light)
+}
+#endif

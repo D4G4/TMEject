@@ -193,3 +193,17 @@ private struct NotchDiagram: View {
         }
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("MenuBarHelp · Light") {
+    MenuBarHelpView(onOpenPreferences: {}, onDismiss: {})
+        .environment(\.colorScheme, .light)
+}
+
+#Preview("MenuBarHelp · Dark") {
+    MenuBarHelpView(onOpenPreferences: {}, onDismiss: {})
+        .environment(\.colorScheme, .dark)
+}
+#endif

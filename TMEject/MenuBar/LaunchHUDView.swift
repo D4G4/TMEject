@@ -101,3 +101,19 @@ struct LaunchHUDView: View {
         .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("LaunchHUD · Light") {
+    LaunchHUDView(onFound: {}, onCantFind: {})
+        .padding(20)
+        .environment(\.colorScheme, .light)
+}
+
+#Preview("LaunchHUD · Dark") {
+    LaunchHUDView(onFound: {}, onCantFind: {})
+        .padding(20)
+        .environment(\.colorScheme, .dark)
+}
+#endif

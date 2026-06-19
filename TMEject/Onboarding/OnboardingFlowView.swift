@@ -488,3 +488,69 @@ struct OnboardingTertiaryLinkStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.6 : 1)
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+private struct OnboardingPreviewShell<Content: View>: View {
+    let pageIndex: Int
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            StepIndicator(currentIndex: pageIndex, totalCount: OnboardingStep.pageCount)
+                .padding(.top, 26)
+                .padding(.bottom, 18)
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: 480, height: 540)
+        .surfaceBackground(.window)
+    }
+}
+
+#Preview("Step 1 · Intro · Light") {
+    OnboardingPreviewShell(pageIndex: 0) {
+        OnboardingIntroStep(onPrimary: {})
+    }
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Step 2 · Notifications · Light") {
+    OnboardingPreviewShell(pageIndex: 1) {
+        OnboardingNotificationsStep(isWorking: false, onAllow: {}, onSkip: {})
+    }
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Step 3 · FDA · Light") {
+    OnboardingPreviewShell(pageIndex: 2) {
+        OnboardingFDAStep(isWorking: false,
+                          errorMessage: nil,
+                          onOpenSettings: {},
+                          onConfirmGranted: {},
+                          onSkip: {})
+    }
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Step 3 · FDA · error state · Dark") {
+    OnboardingPreviewShell(pageIndex: 2) {
+        OnboardingFDAStep(
+            isWorking: false,
+            errorMessage: "Full Disk Access still isn't granted. In System Settings → " +
+                "Privacy & Security → Full Disk Access, toggle TMEject on, then tap " +
+                "“I've granted it” again.",
+            onOpenSettings: {},
+            onConfirmGranted: {},
+            onSkip: {}
+        )
+    }
+    .environment(\.colorScheme, .dark)
+}
+
+#Preview("Flow · driven by fake model · Light") {
+    OnboardingFlowView(model: OnboardingFlowModel.preview(fdaState: .denied))
+        .environment(\.colorScheme, .light)
+}
+#endif

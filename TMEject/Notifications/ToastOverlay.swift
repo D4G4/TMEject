@@ -208,3 +208,51 @@ private struct ToastView: View {
         }
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+private struct ToastPreviewGroup: View {
+    let withSubtitle: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ToastView(kind: .ok,
+                      title: "Backup Drive ejected",
+                      subtitle: withSubtitle ? "Safe to unplug" : nil,
+                      actionLabel: nil, onAction: nil)
+            ToastView(kind: .err,
+                      title: "Eject failed",
+                      subtitle: withSubtitle ? "held by mds_stores (pid 412)" : nil,
+                      actionLabel: "Retry", onAction: {})
+            ToastView(kind: .warning,
+                      title: "Foreign Time Machine drive",
+                      subtitle: withSubtitle ? "Friend's Drive — Ejecting in 10s" : nil,
+                      actionLabel: "Cancel", onAction: {})
+            ToastView(kind: .busy,
+                      title: "Backing up…",
+                      subtitle: withSubtitle ? "TMEject will eject when it's done" : nil,
+                      actionLabel: nil, onAction: nil)
+            ToastView(kind: .neutral,
+                      title: "Backup complete",
+                      subtitle: withSubtitle ? "Skipping eject — next backup due in ~5m" : nil,
+                      actionLabel: nil, onAction: nil)
+        }
+        .padding(16)
+    }
+}
+
+#Preview("All kinds · with subtitle · Light") {
+    ToastPreviewGroup(withSubtitle: true)
+        .environment(\.colorScheme, .light)
+}
+
+#Preview("All kinds · title only · Light") {
+    ToastPreviewGroup(withSubtitle: false)
+        .environment(\.colorScheme, .light)
+}
+
+#Preview("All kinds · with subtitle · Dark") {
+    ToastPreviewGroup(withSubtitle: true)
+        .environment(\.colorScheme, .dark)
+}
+#endif
